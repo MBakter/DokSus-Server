@@ -28,9 +28,10 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
                 auth
-                    .requestMatchers("/api/auth/**").permitAll() // Open login and register
-                    .requestMatchers("/api/documents/**").permitAll() // Open search endpoints
-                    .anyRequest().authenticated() // All other requests require the JWT
+                    .requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers("/api/documents/**").permitAll() // Open all document fetch endpoints
+                    .requestMatchers("/api/users/profiles").permitAll() // Allow fetching author names
+                    .anyRequest().authenticated()
             }
             .formLogin { it.disable() }
             .httpBasic { it.disable() }

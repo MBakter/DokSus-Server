@@ -33,4 +33,10 @@ class DocumentController(
         val userDocuments = documentRepository.findByOwnerEmail(userEmail)
         return ResponseEntity.ok(userDocuments)
     }
+
+    @GetMapping("/user")
+    fun getUserPublishedDocuments(@RequestParam email: String): ResponseEntity<List<Document>> {
+        val publicDocuments = documentRepository.findByOwnerEmailAndIsPublishedTrue(email)
+        return ResponseEntity.ok(publicDocuments)
+    }
 }

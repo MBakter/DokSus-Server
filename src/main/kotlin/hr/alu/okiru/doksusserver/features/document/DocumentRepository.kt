@@ -14,6 +14,7 @@ interface DocumentRepository : MongoRepository<Document, String>, DocumentReposi
 
     // Retrieves both private and public documents, but ONLY for the specified owner
     fun findByOwnerEmail(ownerEmail: String): List<Document>
+    fun findByOwnerEmailAndIsPublishedTrue(ownerEmail: String): List<Document>
 }
 
 
