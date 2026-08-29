@@ -13,7 +13,10 @@ data class Document(
     var isPublished: Boolean = false,
     var ownerEmail: String,
     var creationDate: Instant = Clock.System.now(),
-    var publicationDate: Instant,
+    var publicationDate: Instant? = null,
+    var coverPath: String? = null,
+    var pdfPath: String? = null,
+    var model3dPath: String? = null,
 
     var content: DocumentContent
 )
@@ -38,4 +41,9 @@ data class DocumentContent(
     var binder: String,
     var finishingLayer: String,
     var date: String
+)
+
+data class DocumentSaveRequest(
+    val content: DocumentContent,
+    val isPublished: Boolean
 )

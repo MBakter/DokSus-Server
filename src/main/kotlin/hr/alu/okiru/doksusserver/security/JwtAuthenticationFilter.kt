@@ -29,6 +29,12 @@ class JwtAuthenticationFilter(
 
         val jwt = authHeader.substring(7)
 
+        if (jwt == "null" || jwt == "undefined" || jwt.isBlank()) {
+            println("Missing or invalid token string provided.")
+            filterChain.doFilter(request, response)
+            return
+        }
+
         try {
             val userEmail = jwtService.extractUsername(jwt)
 
@@ -46,7 +52,6 @@ class JwtAuthenticationFilter(
                 }
             }
         } catch (e: Exception) {
-            // Token is malformed, expired, or invalid.
             // Log it and let the request proceed as unauthenticated.
             println("Invalid JWT Token: ${e.message}")
         }

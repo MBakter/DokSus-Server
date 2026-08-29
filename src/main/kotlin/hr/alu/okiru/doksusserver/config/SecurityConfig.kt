@@ -29,8 +29,9 @@ class SecurityConfig(
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/api/auth/**").permitAll()
-                    .requestMatchers("/api/documents/**").permitAll() // Open all document fetch endpoints
-                    .requestMatchers("/api/users/profiles").permitAll() // Allow fetching author names
+                    .requestMatchers("/api/documents/me").authenticated() // Keep /me protected
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/documents/**").permitAll() // Open GET for fetching docs
+                    .requestMatchers("/api/users/profiles").permitAll()
                     .anyRequest().authenticated()
             }
             .formLogin { it.disable() }
