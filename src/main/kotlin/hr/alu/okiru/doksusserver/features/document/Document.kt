@@ -5,20 +5,30 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import org.springframework.data.mongodb.core.mapping.Document as MongoDocument
 
+data class NamedFile(
+    val name: String,
+    val path: String
+)
+
 @MongoDocument(collection = "documents")
 data class Document(
     @Id
-    var id: String? = null,
+    val id: String? = null,
 
+    //Metadata
     var isPublished: Boolean = false,
     var ownerEmail: String,
     var creationDate: Instant = Clock.System.now(),
     var publicationDate: Instant? = null,
+
+    // Files
     var coverPath: String? = null,
     var pdfPath: String? = null,
-    var model3dPath: String? = null,
+    var projectPhotos: List<NamedFile> = emptyList(),
+    var models3d: List<NamedFile> = emptyList(),
+    var video: NamedFile? = null,
 
-    var content: DocumentContent
+    var content: DocumentContent,
 )
 
 data class DocumentContent(

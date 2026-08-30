@@ -1,6 +1,6 @@
 package hr.alu.okiru.doksusserver.features.document
 
-import hr.alu.okiru.doksusserver.data.filestorage.FileStorageService
+import hr.alu.okiru.doksusserver.data.file.FileStorageService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import java.security.Principal
+import kotlin.time.Clock
 
 @RestController
 @RequestMapping("/api/documents")
@@ -63,55 +64,48 @@ class DocumentController(
         return ResponseEntity.ok(document)
     }
 
-//    @PostMapping
-//    fun createDocument(
-//        @RequestBody request: DocumentSaveRequest,
-//        principal: Principal
-//    ): ResponseEntity<Document> {
-//        val newDocument = Document(
-//            ownerEmail = principal.name, // Extracted securely from the JWT token
-//            isPublished = request.isPublished,
-//            content = request.content,
-//        )
-//
-//        val savedDocument = documentRepository.save(newDocument)
-//        return ResponseEntity.ok(savedDocument)
-//    }
-
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun createDocument(
         @RequestPart("document") documentContent: DocumentContent,
         @RequestParam("isPublished") isPublished: Boolean,
         @RequestPart("cover", required = false) cover: MultipartFile?,
         @RequestPart("pdf", required = false) pdf: MultipartFile?,
-        @RequestPart("model3d", required = false) model3d: MultipartFile?,
+        @RequestPart("video", required = false) videoFile: MultipartFile?,
+        @RequestParam("videoName", required = false) videoName: String?,
+        @RequestPart("projectPhotos", required = false) projectPhotos: List<MultipartFile>?,
+        @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?, // Changed to @RequestParam
+        @RequestPart("models3d", required = false) models3d: List<MultipartFile>?,
+        @RequestParam("models3dNames", required = false) models3dNames: List<String>?, // Changed to @RequestParam
+
         authentication: Authentication
     ): ResponseEntity<Document> {
-
-        // Extract the email from the JWT Subject
         val ownerEmail = authentication.name
 
-        var coverPath: String? = null
-        var pdfPath: String? = null
-        var model3dPath: String? = null
-
-        // Process files if they were included in the request
-        if (cover != null) coverPath = fileStorageService.saveFile(cover, ownerEmail)
-        if (pdf != null) pdfPath = fileStorageService.saveFile(pdf, ownerEmail)
-        if (model3d != null) model3dPath = fileStorageService.saveFile(model3d, ownerEmail)
-
-        // Pass the paths to your MongoDB service to be saved alongside the document content
-        val savedDocument = documentRepository.save(
-            Document(
-                content = documentContent,
-                isPublished = isPublished,
-                ownerEmail = ownerEmail,
-                coverPath = coverPath,
-                pdfPath = pdfPath,
-                model3dPath = model3dPath
+        val coverPath = cover?.let { fileStorageService.saveFile(it, ownerEmail) }
+        val pdfPath = pdf?.let { fileStorageService.saveFile(it, ownerEmail) }
+        val processedVideo = videoFile?.let {
+            NamedFile(
+                name = videoName ?: it.originalFilename ?: "Video",
+                path = fileStorageService.saveFile(it, ownerEmail)
             )
+        }
+
+        val processedPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, ownerEmail, "project-photos")
+        val processedModels = processMultipleFiles(models3d, models3dNames, ownerEmail, "3d-models")
+
+        val newDocument = Document(
+            content = documentContent,
+            isPublished = isPublished,
+            ownerEmail = ownerEmail,
+            publicationDate = if (isPublished) Clock.System.now() else null, // Handle publication date
+            coverPath = coverPath,
+            pdfPath = pdfPath,
+            video = processedVideo,
+            projectPhotos = processedPhotos,
+            models3d = processedModels
         )
 
+        val savedDocument = documentRepository.save(newDocument)
         return ResponseEntity.ok(savedDocument)
     }
 
@@ -120,29 +114,110 @@ class DocumentController(
         @PathVariable id: String,
         @RequestPart("document") documentContent: DocumentContent,
         @RequestParam("isPublished") isPublished: Boolean,
+
+        // --- Cover ---
         @RequestPart("cover", required = false) cover: MultipartFile?,
+        @RequestParam("removeServerCover", required = false, defaultValue = "false") removeServerCover: Boolean,
+
+        // --- PDF ---
         @RequestPart("pdf", required = false) pdf: MultipartFile?,
-        @RequestPart("model3d", required = false) model3d: MultipartFile?,
+        @RequestParam("removeServerPdf", required = false, defaultValue = "false") removeServerPdf: Boolean,
+
+        // --- Video ---
+        @RequestPart("video", required = false) videoFile: MultipartFile?,
+        @RequestParam("videoName", required = false) videoName: String?,
+        @RequestPart("existingVideo", required = false) existingVideo: NamedFile?,
+        @RequestParam("removeServerVideo", required = false, defaultValue = "false") removeServerVideo: Boolean,
+
+        // --- Project Photos ---
+        @RequestPart("existingProjectPhotos", required = false) existingProjectPhotos: List<NamedFile>?,
+        @RequestPart("projectPhotos", required = false) projectPhotos: List<MultipartFile>?,
+        @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?,
+
+        // --- 3D Models ---
+        @RequestPart("existingModels3d", required = false) existingModels3d: List<NamedFile>?,
+        @RequestPart("models3d", required = false) models3d: List<MultipartFile>?,
+        @RequestParam("models3dNames", required = false) models3dNames: List<String>?,
+
         principal: Principal
     ): ResponseEntity<Any> {
-
         val existingDocument = documentRepository.findById(id).orElse(null)
             ?: return ResponseEntity.notFound().build()
 
         if (existingDocument.ownerEmail != principal.name) {
-            return ResponseEntity.status(403).body("Access denied: You don't have the right to modify this document.")
+            return ResponseEntity.status(403).body("Access denied: You do not have permission to edit this document.")
         }
 
         val ownerEmail = principal.name
 
+        // 1. Handle Cover Deletion & Update
+        if (removeServerCover) {
+            existingDocument.coverPath = null
+        }
         cover?.let { existingDocument.coverPath = fileStorageService.saveFile(it, ownerEmail) }
+
+        // 2. Handle PDF Deletion & Update
+        if (removeServerPdf) {
+            existingDocument.pdfPath = null
+        }
         pdf?.let { existingDocument.pdfPath = fileStorageService.saveFile(it, ownerEmail) }
-        model3d?.let { existingDocument.model3dPath = fileStorageService.saveFile(it, ownerEmail) }
+
+        // 3. Handle Video Rename, Deletion, & Update
+        if (removeServerVideo) {
+            existingDocument.video = null
+        } else if (existingVideo != null) {
+            existingDocument.video = existingVideo
+        }
+        videoFile?.let {
+            existingDocument.video = NamedFile(
+                name = videoName ?: it.originalFilename ?: "Video",
+                path = fileStorageService.saveFile(it, ownerEmail)
+            )
+        }
+
+        // 4. Handle Photo Deletions/Renames (Overwrites existing list) & Append New
+        if (existingProjectPhotos != null) {
+            existingDocument.projectPhotos = existingProjectPhotos
+        }
+        val newPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, ownerEmail, "project-photos")
+        if (newPhotos.isNotEmpty()) {
+            existingDocument.projectPhotos = existingDocument.projectPhotos + newPhotos
+        }
+
+        // 5. Handle 3D Model Deletions/Renames (Overwrites existing list) & Append New
+        if (existingModels3d != null) {
+            existingDocument.models3d = existingModels3d
+        }
+        val newModels = processMultipleFiles(models3d, models3dNames, ownerEmail, "3d-models")
+        if (newModels.isNotEmpty()) {
+            existingDocument.models3d = existingDocument.models3d + newModels
+        }
+
+        // Handle publication date logic
+        if (isPublished && !existingDocument.isPublished) {
+            existingDocument.publicationDate = Clock.System.now()
+        } else if (!isPublished && existingDocument.isPublished) {
+            existingDocument.publicationDate = null
+        }
 
         existingDocument.content = documentContent
         existingDocument.isPublished = isPublished
 
         val updatedDocument = documentRepository.save(existingDocument)
         return ResponseEntity.ok(updatedDocument)
+    }
+
+    private fun processMultipleFiles(
+        files: List<MultipartFile>?,
+        names: List<String>?,
+        userEmail: String,
+        subfolder: String
+    ): List<NamedFile> {
+        if (files == null || names == null || files.size != names.size) return emptyList()
+
+        return files.zip(names).map { (file, name) ->
+            val path = fileStorageService.saveFile(file, userEmail, subfolder)
+            NamedFile(name = name, path = path)
+        }
     }
 }
