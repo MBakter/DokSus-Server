@@ -33,6 +33,7 @@ class SecurityConfig(
                     .requestMatchers("/api/documents/me").authenticated() // Keep /me protected
                     .requestMatchers(HttpMethod.GET, "/api/documents/**").permitAll() // Open GET for fetching docs
                     .requestMatchers("/api/users/profiles").permitAll()
+                    .requestMatchers("/api/users/search").authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/files").permitAll()
                     .anyRequest().authenticated()
             }

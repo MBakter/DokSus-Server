@@ -25,7 +25,26 @@ class UserController(
                 name = user.name,
                 surname = user.surname,
                 email = user.email,
-                role = user.role
+            )
+        }
+
+        return ResponseEntity.ok(userDtos)
+    }
+
+    @GetMapping("/search")
+    fun searchUsers(@RequestParam query: String): ResponseEntity<List<UserDto>> {
+        // Prevent empty or overly broad searches
+        if (query.trim().length < 2) {
+            return ResponseEntity.ok(emptyList())
+        }
+
+        val users = userRepository.searchUsers(query.trim())
+        val userDtos = users.map { user ->
+            UserDto(
+                id = user.id!!,
+                name = user.name,
+                surname = user.surname,
+                email = user.email,
             )
         }
 

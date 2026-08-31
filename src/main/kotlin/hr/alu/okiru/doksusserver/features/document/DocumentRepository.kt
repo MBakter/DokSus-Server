@@ -14,20 +14,41 @@ interface DocumentRepository : MongoRepository<Document, String>, DocumentReposi
 
     // Retrieves both private and public documents, but ONLY for the specified owner
     fun findByOwnerEmail(ownerEmail: String): List<Document>
-    fun findByOwnerEmailAndIsPublishedTrue(ownerEmail: String): List<Document>
+
+    // Finds published documents for a specific user, filtered by allowed visibilities
+    fun findByOwnerEmailAndIsPublishedTrueAndVisibilityIn(
+        ownerEmail: String,
+        visibilities: List<Document.Visibility>
+    ): List<Document>
 }
 
 
 //// Custom Repository for more complex queries
 
+interface DocumentRepositoryCustom {
+    fun searchDocuments(
+        category: String?,
+        keyword: String?,
+        visibilities: List<Document.Visibility>,
+        pageable: Pageable
+    ): Page<Document>
+}
+
 class DocumentRepositoryCustomImpl(
-private val mongoTemplate: MongoTemplate
+    private val mongoTemplate: MongoTemplate
 ) : DocumentRepositoryCustom {
 
-    override fun searchDocuments(category: String?, keyword: String?, pageable: Pageable): Page<Document> {
+    override fun searchDocuments(
+        category: String?,
+        keyword: String?,
+        visibilities: List<Document.Visibility>,
+        pageable: Pageable
+    ): Page<Document> {
         val query = Query().with(pageable)
 
+        // Must be published AND match the allowed visibilities based on authentication context
         query.addCriteria(Criteria.where("isPublished").`is`(true))
+        query.addCriteria(Criteria.where("visibility").`in`(visibilities))
 
         if (!category.isNullOrBlank()) {
             query.addCriteria(Criteria.where("content.category").`is`(category))
@@ -48,14 +69,13 @@ private val mongoTemplate: MongoTemplate
             ))
         }
 
+        // Count total matching records for pagination metadata
         val countQuery = Query.of(query).limit(-1).skip(-1)
         val count = mongoTemplate.count(countQuery, Document::class.java)
+
+        // Execute paginated query
         val documents = mongoTemplate.find(query, Document::class.java)
 
         return PageImpl(documents, pageable, count)
     }
-}
-
-interface DocumentRepositoryCustom {
-    fun searchDocuments(category: String?, keyword: String?, pageable: Pageable): Page<Document>
 }

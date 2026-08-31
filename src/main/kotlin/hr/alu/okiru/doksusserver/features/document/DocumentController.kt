@@ -24,25 +24,40 @@ class DocumentController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "30") size: Int,
         @RequestParam(required = false) search: String?,
-        @RequestHeader(value = "Category", required = false) category: String?
+        @RequestHeader(value = "Category", required = false) category: String?,
+        principal: Principal?
     ): Page<Document> {
-
         val pageable: Pageable = PageRequest.of(page, size)
-        return documentRepository.searchDocuments(category, search, pageable)
+
+        // Define allowed visibilities based on authentication status
+        val allowedVisibilities = if (principal != null) {
+            listOf(Document.Visibility.PUBLIC, Document.Visibility.OKIRU)
+        } else {
+            listOf(Document.Visibility.PUBLIC)
+        }
+
+        return documentRepository.searchDocuments(category, search, allowedVisibilities, pageable)
     }
 
     @GetMapping("/me")
     fun getMyDocuments(principal: Principal): ResponseEntity<List<Document>> {
-        // principal.name contains the email extracted from the JWT token
         val userEmail = principal.name
-
         val userDocuments = documentRepository.findByOwnerEmail(userEmail)
         return ResponseEntity.ok(userDocuments)
     }
 
     @GetMapping("/user")
-    fun getUserPublishedDocuments(@RequestParam email: String): ResponseEntity<List<Document>> {
-        val publicDocuments = documentRepository.findByOwnerEmailAndIsPublishedTrue(email)
+    fun getUserPublishedDocuments(
+        @RequestParam email: String,
+        principal: Principal?
+    ): ResponseEntity<List<Document>> {
+        val allowedVisibilities = if (principal != null) {
+            listOf(Document.Visibility.PUBLIC, Document.Visibility.OKIRU)
+        } else {
+            listOf(Document.Visibility.PUBLIC)
+        }
+
+        val publicDocuments = documentRepository.findByOwnerEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
         return ResponseEntity.ok(publicDocuments)
     }
 
@@ -54,9 +69,13 @@ class DocumentController(
         val document = documentRepository.findById(id).orElse(null)
             ?: return ResponseEntity.notFound().build()
 
-        // HARD SECURITY ENFORCEMENT: If private, verify ownership
         if (!document.isPublished) {
             if (principal == null || document.ownerEmail != principal.name) {
+                return ResponseEntity.status(403).build()
+            }
+        } else {
+            // Apply visibility constraints for published documents
+            if (document.visibility == Document.Visibility.OKIRU && principal == null) {
                 return ResponseEntity.status(403).build()
             }
         }
@@ -68,14 +87,16 @@ class DocumentController(
     fun createDocument(
         @RequestPart("document") documentContent: DocumentContent,
         @RequestParam("isPublished") isPublished: Boolean,
+        @RequestParam("visibility", defaultValue = "OKIRU") visibility: Document.Visibility,
+        @RequestParam("coAuthorEmails", required = false) coAuthorEmails: List<String>?,
         @RequestPart("cover", required = false) cover: MultipartFile?,
         @RequestPart("pdf", required = false) pdf: MultipartFile?,
         @RequestPart("video", required = false) videoFile: MultipartFile?,
         @RequestParam("videoName", required = false) videoName: String?,
         @RequestPart("projectPhotos", required = false) projectPhotos: List<MultipartFile>?,
-        @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?, // Changed to @RequestParam
+        @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?,
         @RequestPart("models3d", required = false) models3d: List<MultipartFile>?,
-        @RequestParam("models3dNames", required = false) models3dNames: List<String>?, // Changed to @RequestParam
+        @RequestParam("models3dNames", required = false) models3dNames: List<String>?,
 
         authentication: Authentication
     ): ResponseEntity<Document> {
@@ -96,8 +117,10 @@ class DocumentController(
         val newDocument = Document(
             content = documentContent,
             isPublished = isPublished,
+            visibility = visibility,
             ownerEmail = ownerEmail,
-            publicationDate = if (isPublished) Clock.System.now() else null, // Handle publication date
+            coAuthorEmails = coAuthorEmails ?: emptyList(),
+            publicationDate = if (isPublished) Clock.System.now() else null,
             coverPath = coverPath,
             pdfPath = pdfPath,
             video = processedVideo,
@@ -114,6 +137,8 @@ class DocumentController(
         @PathVariable id: String,
         @RequestPart("document") documentContent: DocumentContent,
         @RequestParam("isPublished") isPublished: Boolean,
+        @RequestParam("visibility", defaultValue = "OKIRU") visibility: Document.Visibility,
+        @RequestParam("coAuthorEmails", required = false) coAuthorEmails: List<String>?,
 
         // --- Cover ---
         @RequestPart("cover", required = false) cover: MultipartFile?,
@@ -175,7 +200,7 @@ class DocumentController(
             )
         }
 
-        // 4. Handle Photo Deletions/Renames (Overwrites existing list) & Append New
+        // 4. Handle Photo Deletions/Renames
         if (existingProjectPhotos != null) {
             existingDocument.projectPhotos = existingProjectPhotos
         }
@@ -184,7 +209,7 @@ class DocumentController(
             existingDocument.projectPhotos = existingDocument.projectPhotos + newPhotos
         }
 
-        // 5. Handle 3D Model Deletions/Renames (Overwrites existing list) & Append New
+        // 5. Handle 3D Model Deletions/Renames
         if (existingModels3d != null) {
             existingDocument.models3d = existingModels3d
         }
@@ -202,6 +227,8 @@ class DocumentController(
 
         existingDocument.content = documentContent
         existingDocument.isPublished = isPublished
+        existingDocument.visibility = visibility
+        existingDocument.coAuthorEmails = coAuthorEmails ?: emptyList()
 
         val updatedDocument = documentRepository.save(existingDocument)
         return ResponseEntity.ok(updatedDocument)

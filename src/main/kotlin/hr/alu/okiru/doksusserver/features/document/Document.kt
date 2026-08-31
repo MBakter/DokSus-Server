@@ -1,5 +1,7 @@
 package hr.alu.okiru.doksusserver.features.document
 
+import hr.alu.okiru.doksusserver.features.user.User
+import hr.alu.okiru.doksusserver.features.user.UserDto
 import org.springframework.data.annotation.Id
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -18,8 +20,16 @@ data class Document(
     //Metadata
     var isPublished: Boolean = false,
     var ownerEmail: String,
+    var visibility: Visibility,
     var creationDate: Instant = Clock.System.now(),
     var publicationDate: Instant? = null,
+    var coAuthorEmails: List<String> = emptyList(),
+
+    @Transient
+    var ownerProfile: UserDto? = null,
+
+    @Transient
+    var authorProfiles: List<UserDto> = emptyList(),
 
     // Files
     var coverPath: String? = null,
@@ -29,7 +39,12 @@ data class Document(
     var video: NamedFile? = null,
 
     var content: DocumentContent,
-)
+) {
+    enum class Visibility {
+        PUBLIC,
+        OKIRU
+    }
+}
 
 data class DocumentContent(
     var category: String,

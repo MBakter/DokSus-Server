@@ -51,7 +51,6 @@ class AuthController(
             name = user.name,
             surname = user.surname,
             email = user.email,
-            role = user.role
         )
 
         return ResponseEntity.ok(AuthResponse(jwtToken, userDto))

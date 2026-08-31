@@ -32,7 +32,6 @@ data class UserDto(
     val name: String,
     val surname: String,
     val email: String,
-    val role: String
 )
 
 data class AuthResponse(
