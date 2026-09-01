@@ -15,6 +15,7 @@ import kotlin.time.Clock
 @RestController
 @RequestMapping("/api/documents")
 class DocumentController(
+    private val documentService: DocumentService,
     private val documentRepository: DocumentRepository,
     private val fileStorageService: FileStorageService,
 ) {
@@ -27,22 +28,38 @@ class DocumentController(
         @RequestHeader(value = "Category", required = false) category: String?,
         principal: Principal?
     ): Page<Document> {
-        val pageable: Pageable = PageRequest.of(page, size)
-
-        // Define allowed visibilities based on authentication status
         val allowedVisibilities = if (principal != null) {
             listOf(Document.Visibility.PUBLIC, Document.Visibility.OKIRU)
         } else {
             listOf(Document.Visibility.PUBLIC)
         }
 
-        return documentRepository.searchDocuments(category, search, allowedVisibilities, pageable)
+        return documentService.getDocuments(category, search, allowedVisibilities, PageRequest.of(page, size))
+    }
+
+    @GetMapping("/{id}")
+    fun getDocumentById(
+        @PathVariable id: String,
+        principal: Principal?
+    ): ResponseEntity<Document> {
+        val document = documentService.getDocumentById(id)
+            ?: return ResponseEntity.notFound().build()
+
+        // Security Enforcement
+        if (!document.isPublished) {
+            if (principal == null || document.ownerEmail != principal.name) {
+                return ResponseEntity.status(403).build()
+            }
+        } else if (document.visibility == Document.Visibility.OKIRU && principal == null) {
+            return ResponseEntity.status(403).build()
+        }
+
+        return ResponseEntity.ok(document)
     }
 
     @GetMapping("/me")
     fun getMyDocuments(principal: Principal): ResponseEntity<List<Document>> {
-        val userEmail = principal.name
-        val userDocuments = documentRepository.findByOwnerEmail(userEmail)
+        val userDocuments = documentService.getMyDocuments(principal.name)
         return ResponseEntity.ok(userDocuments)
     }
 
@@ -57,30 +74,8 @@ class DocumentController(
             listOf(Document.Visibility.PUBLIC)
         }
 
-        val publicDocuments = documentRepository.findByOwnerEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
-        return ResponseEntity.ok(publicDocuments)
-    }
-
-    @GetMapping("/{id}")
-    fun getDocumentById(
-        @PathVariable id: String,
-        principal: Principal?
-    ): ResponseEntity<Document> {
-        val document = documentRepository.findById(id).orElse(null)
-            ?: return ResponseEntity.notFound().build()
-
-        if (!document.isPublished) {
-            if (principal == null || document.ownerEmail != principal.name) {
-                return ResponseEntity.status(403).build()
-            }
-        } else {
-            // Apply visibility constraints for published documents
-            if (document.visibility == Document.Visibility.OKIRU && principal == null) {
-                return ResponseEntity.status(403).build()
-            }
-        }
-
-        return ResponseEntity.ok(document)
+        val docs = documentService.getUserPublishedDocuments(email, allowedVisibilities)
+        return ResponseEntity.ok(docs)
     }
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -129,7 +124,10 @@ class DocumentController(
         )
 
         val savedDocument = documentRepository.save(newDocument)
-        return ResponseEntity.ok(savedDocument)
+
+        return savedDocument.id?.let { id ->
+            ResponseEntity.ok(documentService.getDocumentById(id))
+        } ?: ResponseEntity.ok(savedDocument)
     }
 
     @PutMapping("/{id}", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -206,7 +204,7 @@ class DocumentController(
         }
         val newPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, ownerEmail, "project-photos")
         if (newPhotos.isNotEmpty()) {
-            existingDocument.projectPhotos = existingDocument.projectPhotos + newPhotos
+            existingDocument.projectPhotos += newPhotos
         }
 
         // 5. Handle 3D Model Deletions/Renames
@@ -215,7 +213,7 @@ class DocumentController(
         }
         val newModels = processMultipleFiles(models3d, models3dNames, ownerEmail, "3d-models")
         if (newModels.isNotEmpty()) {
-            existingDocument.models3d = existingDocument.models3d + newModels
+            existingDocument.models3d += newModels
         }
 
         // Handle publication date logic
@@ -231,7 +229,11 @@ class DocumentController(
         existingDocument.coAuthorEmails = coAuthorEmails ?: emptyList()
 
         val updatedDocument = documentRepository.save(existingDocument)
-        return ResponseEntity.ok(updatedDocument)
+
+        return updatedDocument.id?.let { id ->
+            ResponseEntity.ok(documentService.getDocumentById(id))
+        } ?: ResponseEntity.ok(updatedDocument)
+
     }
 
     private fun processMultipleFiles(
