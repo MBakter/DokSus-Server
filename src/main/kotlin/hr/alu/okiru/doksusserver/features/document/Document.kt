@@ -1,6 +1,5 @@
 package hr.alu.okiru.doksusserver.features.document
 
-import hr.alu.okiru.doksusserver.features.user.User
 import hr.alu.okiru.doksusserver.features.user.UserDto
 import org.springframework.data.annotation.Id
 import kotlin.time.Clock
@@ -71,4 +70,19 @@ data class DocumentContent(
 data class DocumentSaveRequest(
     val content: DocumentContent,
     val isPublished: Boolean
+)
+
+data class DocumentMetadataUpdateRequest(
+    val content: DocumentContent,
+    val isPublished: Boolean,
+    val visibility: Document.Visibility,
+    val coAuthorEmails: List<String> = emptyList()
+)
+
+data class SyncFilesRequest(
+    val existingFiles: List<NamedFile>
+)
+
+data class SyncFileRequest(
+    val existingFile: NamedFile?
 )

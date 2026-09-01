@@ -3,7 +3,6 @@ package hr.alu.okiru.doksusserver.features.document
 import hr.alu.okiru.doksusserver.data.file.FileStorageService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Pageable
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
@@ -92,7 +91,6 @@ class DocumentController(
         @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?,
         @RequestPart("models3d", required = false) models3d: List<MultipartFile>?,
         @RequestParam("models3dNames", required = false) models3dNames: List<String>?,
-
         authentication: Authentication
     ): ResponseEntity<Document> {
         val ownerEmail = authentication.name
@@ -130,110 +128,151 @@ class DocumentController(
         } ?: ResponseEntity.ok(savedDocument)
     }
 
-    @PutMapping("/{id}", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
-    fun updateDocument(
+    @PutMapping("/{id}", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun updateMetadata(
         @PathVariable id: String,
-        @RequestPart("document") documentContent: DocumentContent,
-        @RequestParam("isPublished") isPublished: Boolean,
-        @RequestParam("visibility", defaultValue = "OKIRU") visibility: Document.Visibility,
-        @RequestParam("coAuthorEmails", required = false) coAuthorEmails: List<String>?,
-
-        // --- Cover ---
-        @RequestPart("cover", required = false) cover: MultipartFile?,
-        @RequestParam("removeServerCover", required = false, defaultValue = "false") removeServerCover: Boolean,
-
-        // --- PDF ---
-        @RequestPart("pdf", required = false) pdf: MultipartFile?,
-        @RequestParam("removeServerPdf", required = false, defaultValue = "false") removeServerPdf: Boolean,
-
-        // --- Video ---
-        @RequestPart("video", required = false) videoFile: MultipartFile?,
-        @RequestParam("videoName", required = false) videoName: String?,
-        @RequestPart("existingVideo", required = false) existingVideo: NamedFile?,
-        @RequestParam("removeServerVideo", required = false, defaultValue = "false") removeServerVideo: Boolean,
-
-        // --- Project Photos ---
-        @RequestPart("existingProjectPhotos", required = false) existingProjectPhotos: List<NamedFile>?,
-        @RequestPart("projectPhotos", required = false) projectPhotos: List<MultipartFile>?,
-        @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?,
-
-        // --- 3D Models ---
-        @RequestPart("existingModels3d", required = false) existingModels3d: List<NamedFile>?,
-        @RequestPart("models3d", required = false) models3d: List<MultipartFile>?,
-        @RequestParam("models3dNames", required = false) models3dNames: List<String>?,
-
+        @RequestBody request: DocumentMetadataUpdateRequest,
         principal: Principal
-    ): ResponseEntity<Any> {
-        val existingDocument = documentRepository.findById(id).orElse(null)
-            ?: return ResponseEntity.notFound().build()
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
 
-        if (existingDocument.ownerEmail != principal.name) {
-            return ResponseEntity.status(403).body("Access denied: You do not have permission to edit this document.")
+        document.content = request.content
+        document.isPublished = request.isPublished
+        document.visibility = request.visibility
+        document.coAuthorEmails = request.coAuthorEmails
+
+        if (request.isPublished && document.publicationDate == null) {
+            document.publicationDate = Clock.System.now()
+        } else if (!request.isPublished) {
+            document.publicationDate = null
         }
 
-        val ownerEmail = principal.name
+        val saved = documentRepository.save(document)
+        return ResponseEntity.ok(documentService.getDocumentById(saved.id!!))
+    }
 
-        // 1. Handle Cover Deletion & Update
-        if (removeServerCover) {
-            existingDocument.coverPath = null
-        }
-        cover?.let { existingDocument.coverPath = fileStorageService.saveFile(it, ownerEmail) }
+    @PostMapping("/{id}/cover", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun uploadCover(
+        @PathVariable id: String,
+        @RequestPart("cover") cover: MultipartFile,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        document.coverPath = fileStorageService.saveFile(cover, principal.name)
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
-        // 2. Handle PDF Deletion & Update
-        if (removeServerPdf) {
-            existingDocument.pdfPath = null
-        }
-        pdf?.let { existingDocument.pdfPath = fileStorageService.saveFile(it, ownerEmail) }
+    @DeleteMapping("/{id}/cover")
+    fun deleteCover(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
+        val document = getDocumentIfOwner(id, principal)
+        document.coverPath = null
+        documentRepository.save(document)
+        return ResponseEntity.noContent().build()
+    }
 
-        // 3. Handle Video Rename, Deletion, & Update
-        if (removeServerVideo) {
-            existingDocument.video = null
-        } else if (existingVideo != null) {
-            existingDocument.video = existingVideo
-        }
-        videoFile?.let {
-            existingDocument.video = NamedFile(
-                name = videoName ?: it.originalFilename ?: "Video",
-                path = fileStorageService.saveFile(it, ownerEmail)
-            )
-        }
+    @PostMapping("/{id}/pdf", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun uploadPdf(
+        @PathVariable id: String,
+        @RequestPart("pdf") pdf: MultipartFile,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        document.pdfPath = fileStorageService.saveFile(pdf, principal.name)
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
-        // 4. Handle Photo Deletions/Renames
-        if (existingProjectPhotos != null) {
-            existingDocument.projectPhotos = existingProjectPhotos
-        }
-        val newPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, ownerEmail, "project-photos")
-        if (newPhotos.isNotEmpty()) {
-            existingDocument.projectPhotos += newPhotos
-        }
+    @DeleteMapping("/{id}/pdf")
+    fun deletePdf(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
+        val document = getDocumentIfOwner(id, principal)
+        document.pdfPath = null
+        documentRepository.save(document)
+        return ResponseEntity.noContent().build()
+    }
 
-        // 5. Handle 3D Model Deletions/Renames
-        if (existingModels3d != null) {
-            existingDocument.models3d = existingModels3d
-        }
-        val newModels = processMultipleFiles(models3d, models3dNames, ownerEmail, "3d-models")
-        if (newModels.isNotEmpty()) {
-            existingDocument.models3d += newModels
-        }
+    @PostMapping("/{id}/video", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun uploadVideo(
+        @PathVariable id: String,
+        @RequestPart("video") videoFile: MultipartFile,
+        @RequestParam("videoName", required = false) videoName: String?,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        document.video = NamedFile(
+            name = videoName ?: videoFile.originalFilename ?: "Video",
+            path = fileStorageService.saveFile(videoFile, principal.name)
+        )
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
-        // Handle publication date logic
-        if (isPublished && !existingDocument.isPublished) {
-            existingDocument.publicationDate = Clock.System.now()
-        } else if (!isPublished && existingDocument.isPublished) {
-            existingDocument.publicationDate = null
-        }
+    @PutMapping("/{id}/video", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun syncVideo(
+        @PathVariable id: String,
+        @RequestBody request: SyncFileRequest,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        document.video = request.existingFile
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
-        existingDocument.content = documentContent
-        existingDocument.isPublished = isPublished
-        existingDocument.visibility = visibility
-        existingDocument.coAuthorEmails = coAuthorEmails ?: emptyList()
+    @PostMapping("/{id}/photos", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun addPhotos(
+        @PathVariable id: String,
+        @RequestPart("projectPhotos") projectPhotos: List<MultipartFile>,
+        @RequestParam("projectPhotoNames") projectPhotoNames: List<String>,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        val newPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, principal.name, "project-photos")
+        document.projectPhotos += newPhotos
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
-        val updatedDocument = documentRepository.save(existingDocument)
+    /**
+     * Overwrites the list of photos with the renamed/reordered/deleted list from request
+     */
+    @PutMapping("/{id}/photos", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun syncPhotos(
+        @PathVariable id: String,
+        @RequestBody request: SyncFilesRequest,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        document.projectPhotos = request.existingFiles
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
-        return updatedDocument.id?.let { id ->
-            ResponseEntity.ok(documentService.getDocumentById(id))
-        } ?: ResponseEntity.ok(updatedDocument)
+    @PostMapping("/{id}/models", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun addModels(
+        @PathVariable id: String,
+        @RequestPart("models3d") models3d: List<MultipartFile>,
+        @RequestParam("models3dNames") models3dNames: List<String>,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        val newModels = processMultipleFiles(models3d, models3dNames, principal.name, "3d-models")
+        document.models3d += newModels
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
 
+    /**
+     * Overwrites the list of models with the renamed/reordered/deleted list from request
+     */
+    @PutMapping("/{id}/models", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun syncModels(
+        @PathVariable id: String,
+        @RequestBody request: SyncFilesRequest,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfOwner(id, principal)
+        document.models3d = request.existingFiles
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
+
+    private fun getDocumentIfOwner(id: String, principal: Principal): Document {
+        val document = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
+        if (document.ownerEmail != principal.name) throw RuntimeException("Access denied")
+        return document
     }
 
     private fun processMultipleFiles(
