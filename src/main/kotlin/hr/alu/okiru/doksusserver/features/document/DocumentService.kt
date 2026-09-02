@@ -4,6 +4,7 @@ import hr.alu.okiru.doksusserver.features.user.UserDto
 import hr.alu.okiru.doksusserver.features.user.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
+import org.springframework.data.web.PagedModel
 import org.springframework.stereotype.Service
 
 @Service
@@ -17,19 +18,24 @@ class DocumentService(
         return enrich(listOf(document)).first()
     }
 
-    fun getDocuments(category: String?, search: String?, allowedVisibilities: List<Document.Visibility>, pageable: Pageable): Page<Document> {
+    fun getDocuments(
+        category: String?,
+        search: String?,
+        allowedVisibilities: List<Document.Visibility>,
+        pageable: Pageable
+    ): Page<Document> {
         val page = documentRepository.searchDocuments(category, search, allowedVisibilities, pageable)
         enrich(page.content)
         return page
     }
 
     fun getMyDocuments(email: String): List<Document> {
-        val documents = documentRepository.findByOwnerEmail(email)
+        val documents = documentRepository.findByCreatorEmail(email) // Updated repository method
         return enrich(documents)
     }
 
     fun getUserPublishedDocuments(email: String, allowedVisibilities: List<Document.Visibility>): List<Document> {
-        val documents = documentRepository.findByOwnerEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
+        val documents = documentRepository.findByCreatorEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities) // Updated repository method
         return enrich(documents)
     }
 
@@ -47,8 +53,11 @@ class DocumentService(
     }
 
     private fun enrichWithUserProfiles(documents: List<Document>) {
-        // 1. Extract all unique emails
-        val allEmails = documents.flatMap { it.coAuthorEmails + it.ownerEmail }.toSet()
+        // 1. Extract all unique emails from creator, co-creators, and mentors
+        val allEmails = documents.flatMap {
+            it.coCreatorEmails + it.mentorEmails + it.creatorEmail
+        }.toSet()
+
         if (allEmails.isEmpty()) return
 
         // 2. Fetch all required users in one single database query
@@ -58,10 +67,16 @@ class DocumentService(
                 UserDto(user.id!!, user.name, user.surname, user.email)
             }
 
-        // 3. Map the data back to the documents
+        // 3. Map the data back to the nested profiles object
         documents.forEach { doc ->
-            doc.ownerProfile = usersMap[doc.ownerEmail]
-            doc.authorProfiles = doc.coAuthorEmails.mapNotNull { usersMap[it] }
+            // In case the transient object is somehow null (e.g., from DB mapping), initialize it
+            if (doc.profiles == null) {
+                doc.profiles = DocumentProfiles()
+            }
+
+            doc.profiles.creatorProfile = usersMap[doc.creatorEmail]
+            doc.profiles.coCreatorProfiles = doc.coCreatorEmails.mapNotNull { usersMap[it] }
+            doc.profiles.mentorProfiles = doc.mentorEmails.mapNotNull { usersMap[it] }
         }
     }
 }

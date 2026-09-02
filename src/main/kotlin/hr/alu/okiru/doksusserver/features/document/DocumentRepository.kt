@@ -12,22 +12,20 @@ import org.springframework.stereotype.Repository
 @Repository
 interface DocumentRepository : MongoRepository<Document, String>, DocumentRepositoryCustom {
 
-    // Retrieves both private and public documents, but ONLY for the specified owner
-    fun findByOwnerEmail(ownerEmail: String): List<Document>
+    // Retrieves both private and public documents, but ONLY for the specified creator
+    fun findByCreatorEmail(creatorEmail: String): List<Document>
 
     // Finds published documents for a specific user, filtered by allowed visibilities
-    fun findByOwnerEmailAndIsPublishedTrueAndVisibilityIn(
-        ownerEmail: String,
+    fun findByCreatorEmailAndIsPublishedTrueAndVisibilityIn(
+        creatorEmail: String,
         visibilities: List<Document.Visibility>
     ): List<Document>
 }
 
-
-//// Custom Repository for more complex queries
-
+// Custom Repository for more complex queries
 interface DocumentRepositoryCustom {
     fun searchDocuments(
-        category: String?,
+        category: String?, // Updated to String for Category enum name
         keyword: String?,
         visibilities: List<Document.Visibility>,
         pageable: Pageable
@@ -50,23 +48,25 @@ class DocumentRepositoryCustomImpl(
         query.addCriteria(Criteria.where("isPublished").`is`(true))
         query.addCriteria(Criteria.where("visibility").`in`(visibilities))
 
-        if (!category.isNullOrBlank()) {
-            query.addCriteria(Criteria.where("content.category").`is`(category))
+        // Category filter using the new String enum representation (e.g., "SLIKE_NA_PLATNU")
+        if (!category.isNullOrBlank() && category != "UNSPECIFIED") {
+            query.addCriteria(Criteria.where("restorationData.category").`is`(category.uppercase()))
         }
 
         if (!keyword.isNullOrBlank()) {
-            query.addCriteria(Criteria().orOperator(
-                Criteria.where("content.name").regex(keyword, "i"),
-                Criteria.where("content.author").regex(keyword, "i"),
-                Criteria.where("content.student").regex(keyword, "i"),
-                Criteria.where("content.professor").regex(keyword, "i"),
-                Criteria.where("content.technique").regex(keyword, "i"),
-                Criteria.where("content.materialsUsed").regex(keyword, "i"),
-                Criteria.where("content.keywords").regex(keyword, "i"),
-                Criteria.where("content.storage").regex(keyword, "i"),
-                Criteria.where("content.location").regex(keyword, "i"),
-                Criteria.where("content.invNumber").regex(keyword, "i")
-            ))
+            query.addCriteria(
+                Criteria().orOperator(
+                    Criteria.where("restorationData.name").regex(keyword, "i"),
+                    Criteria.where("restorationData.author").regex(keyword, "i"),
+                    Criteria.where("restorationData.technique").regex(keyword, "i"),
+                    Criteria.where("restorationData.keywords").regex(keyword, "i"),
+                    Criteria.where("restorationData.storage").regex(keyword, "i"),
+                    Criteria.where("restorationData.location").regex(keyword, "i"),
+                    Criteria.where("restorationData.inventoryNumber").regex(keyword, "i"),
+                    Criteria.where("restorationData.works.name").regex(keyword, "i"),
+                    Criteria.where("restorationData.works.material").regex(keyword, "i")
+                )
+            )
         }
 
         // Count total matching records for pagination metadata

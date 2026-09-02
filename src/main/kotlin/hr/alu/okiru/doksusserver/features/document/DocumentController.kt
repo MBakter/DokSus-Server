@@ -24,7 +24,7 @@ class DocumentController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "30") size: Int,
         @RequestParam(required = false) search: String?,
-        @RequestHeader(value = "Category", required = false) category: String?,
+        @RequestParam(required = false) category: String?,
         principal: Principal?
     ): Page<Document> {
         val allowedVisibilities = if (principal != null) {
@@ -33,7 +33,7 @@ class DocumentController(
             listOf(Document.Visibility.PUBLIC)
         }
 
-        return documentService.getDocuments(category, search, allowedVisibilities, PageRequest.of(page, size))
+        return documentService.getDocuments(category?.uppercase(), search, allowedVisibilities, PageRequest.of(page, size))
     }
 
     @GetMapping("/{id}")
@@ -44,9 +44,8 @@ class DocumentController(
         val document = documentService.getDocumentById(id)
             ?: return ResponseEntity.notFound().build()
 
-        // Security Enforcement
         if (!document.isPublished) {
-            if (principal == null || document.ownerEmail != principal.name) {
+            if (principal == null || document.creatorEmail != principal.name) {
                 return ResponseEntity.status(403).build()
             }
         } else if (document.visibility == Document.Visibility.OKIRU && principal == null) {
@@ -79,10 +78,11 @@ class DocumentController(
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun createDocument(
-        @RequestPart("document") documentContent: DocumentContent,
+        @RequestPart("document") restorationData: RestorationData,
         @RequestParam("isPublished") isPublished: Boolean,
         @RequestParam("visibility", defaultValue = "OKIRU") visibility: Document.Visibility,
-        @RequestParam("coAuthorEmails", required = false) coAuthorEmails: List<String>?,
+        @RequestParam("coCreatorEmails", required = false) coCreatorEmails: List<String>?,
+        @RequestParam("mentorEmails", required = false) mentorEmails: List<String>?,
         @RequestPart("cover", required = false) cover: MultipartFile?,
         @RequestPart("pdf", required = false) pdf: MultipartFile?,
         @RequestPart("video", required = false) videoFile: MultipartFile?,
@@ -93,32 +93,35 @@ class DocumentController(
         @RequestParam("models3dNames", required = false) models3dNames: List<String>?,
         authentication: Authentication
     ): ResponseEntity<Document> {
-        val ownerEmail = authentication.name
+        val creatorEmail = authentication.name
 
-        val coverPath = cover?.let { fileStorageService.saveFile(it, ownerEmail) }
-        val pdfPath = pdf?.let { fileStorageService.saveFile(it, ownerEmail) }
+        val coverPath = cover?.let { fileStorageService.saveFile(it, creatorEmail) }
+        val pdfPath = pdf?.let { fileStorageService.saveFile(it, creatorEmail) }
         val processedVideo = videoFile?.let {
             NamedFile(
                 name = videoName ?: it.originalFilename ?: "Video",
-                path = fileStorageService.saveFile(it, ownerEmail)
+                path = fileStorageService.saveFile(it, creatorEmail)
             )
         }
 
-        val processedPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, ownerEmail, "project-photos")
-        val processedModels = processMultipleFiles(models3d, models3dNames, ownerEmail, "3d-models")
+        val processedPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, creatorEmail, "project-photos")
+        val processedModels = processMultipleFiles(models3d, models3dNames, creatorEmail, "3d-models")
 
         val newDocument = Document(
-            content = documentContent,
+            restorationData = restorationData,
             isPublished = isPublished,
             visibility = visibility,
-            ownerEmail = ownerEmail,
-            coAuthorEmails = coAuthorEmails ?: emptyList(),
+            creatorEmail = creatorEmail,
+            coCreatorEmails = coCreatorEmails ?: emptyList(),
+            mentorEmails = mentorEmails ?: emptyList(),
             publicationDate = if (isPublished) Clock.System.now() else null,
-            coverPath = coverPath,
-            pdfPath = pdfPath,
-            video = processedVideo,
-            projectPhotos = processedPhotos,
-            models3d = processedModels
+            files = DocumentFiles(
+                coverPath = coverPath,
+                pdfPath = pdfPath,
+                video = processedVideo,
+                projectPhotos = processedPhotos,
+                models3d = processedModels
+            )
         )
 
         val savedDocument = documentRepository.save(newDocument)
@@ -134,12 +137,13 @@ class DocumentController(
         @RequestBody request: DocumentMetadataUpdateRequest,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
+        val document = getDocumentIfCreator(id, principal)
 
-        document.content = request.content
+        document.restorationData = request.content
         document.isPublished = request.isPublished
         document.visibility = request.visibility
-        document.coAuthorEmails = request.coAuthorEmails
+        document.coCreatorEmails = request.coCreatorEmails
+        document.mentorEmails = request.mentorEmails
 
         if (request.isPublished && document.publicationDate == null) {
             document.publicationDate = Clock.System.now()
@@ -157,15 +161,15 @@ class DocumentController(
         @RequestPart("cover") cover: MultipartFile,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
-        document.coverPath = fileStorageService.saveFile(cover, principal.name)
+        val document = getDocumentIfCreator(id, principal)
+        document.files.coverPath = fileStorageService.saveFile(cover, principal.name)
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
     @DeleteMapping("/{id}/cover")
     fun deleteCover(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
-        val document = getDocumentIfOwner(id, principal)
-        document.coverPath = null
+        val document = getDocumentIfCreator(id, principal)
+        document.files.coverPath = null
         documentRepository.save(document)
         return ResponseEntity.noContent().build()
     }
@@ -176,15 +180,15 @@ class DocumentController(
         @RequestPart("pdf") pdf: MultipartFile,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
-        document.pdfPath = fileStorageService.saveFile(pdf, principal.name)
+        val document = getDocumentIfCreator(id, principal)
+        document.files.pdfPath = fileStorageService.saveFile(pdf, principal.name)
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
     @DeleteMapping("/{id}/pdf")
     fun deletePdf(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
-        val document = getDocumentIfOwner(id, principal)
-        document.pdfPath = null
+        val document = getDocumentIfCreator(id, principal)
+        document.files.pdfPath = null
         documentRepository.save(document)
         return ResponseEntity.noContent().build()
     }
@@ -196,8 +200,8 @@ class DocumentController(
         @RequestParam("videoName", required = false) videoName: String?,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
-        document.video = NamedFile(
+        val document = getDocumentIfCreator(id, principal)
+        document.files.video = NamedFile(
             name = videoName ?: videoFile.originalFilename ?: "Video",
             path = fileStorageService.saveFile(videoFile, principal.name)
         )
@@ -210,8 +214,8 @@ class DocumentController(
         @RequestBody request: SyncFileRequest,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
-        document.video = request.existingFile
+        val document = getDocumentIfCreator(id, principal)
+        document.files.video = request.existingFile
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
@@ -222,23 +226,20 @@ class DocumentController(
         @RequestParam("projectPhotoNames") projectPhotoNames: List<String>,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
+        val document = getDocumentIfCreator(id, principal)
         val newPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, principal.name, "project-photos")
-        document.projectPhotos += newPhotos
+        document.files.projectPhotos += newPhotos
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
-    /**
-     * Overwrites the list of photos with the renamed/reordered/deleted list from request
-     */
     @PutMapping("/{id}/photos", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun syncPhotos(
         @PathVariable id: String,
         @RequestBody request: SyncFilesRequest,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
-        document.projectPhotos = request.existingFiles
+        val document = getDocumentIfCreator(id, principal)
+        document.files.projectPhotos = request.existingFiles
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
@@ -249,29 +250,27 @@ class DocumentController(
         @RequestParam("models3dNames") models3dNames: List<String>,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
+        val document = getDocumentIfCreator(id, principal)
         val newModels = processMultipleFiles(models3d, models3dNames, principal.name, "3d-models")
-        document.models3d += newModels
+        document.files.models3d += newModels
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
-    /**
-     * Overwrites the list of models with the renamed/reordered/deleted list from request
-     */
     @PutMapping("/{id}/models", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun syncModels(
         @PathVariable id: String,
         @RequestBody request: SyncFilesRequest,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfOwner(id, principal)
-        document.models3d = request.existingFiles
+        val document = getDocumentIfCreator(id, principal)
+        document.files.models3d = request.existingFiles
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
-    private fun getDocumentIfOwner(id: String, principal: Principal): Document {
+    // Renamed from getDocumentIfOwner
+    private fun getDocumentIfCreator(id: String, principal: Principal): Document {
         val document = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
-        if (document.ownerEmail != principal.name) throw RuntimeException("Access denied")
+        if (document.creatorEmail != principal.name) throw RuntimeException("Access denied")
         return document
     }
 

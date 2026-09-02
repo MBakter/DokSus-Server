@@ -1,5 +1,7 @@
 package hr.alu.okiru.doksusserver.features.document
 
+import hr.alu.okiru.doksusserver.features.reference_data.AnalysisType
+import hr.alu.okiru.doksusserver.features.reference_data.Category
 import hr.alu.okiru.doksusserver.features.user.UserDto
 import org.springframework.data.annotation.Id
 import kotlin.time.Clock
@@ -16,28 +18,20 @@ data class Document(
     @Id
     val id: String? = null,
 
-    //Metadata
+    // Metadata
     var isPublished: Boolean = false,
-    var ownerEmail: String,
     var visibility: Visibility,
+    var creatorEmail: String,
+    var coCreatorEmails: List<String> = emptyList(),
+    var mentorEmails: List<String> = emptyList(),
     var creationDate: Instant = Clock.System.now(),
     var publicationDate: Instant? = null,
-    var coAuthorEmails: List<String> = emptyList(),
+
+    var restorationData: RestorationData,
+    var files: DocumentFiles = DocumentFiles(),
 
     @Transient
-    var ownerProfile: UserDto? = null,
-
-    @Transient
-    var authorProfiles: List<UserDto> = emptyList(),
-
-    // Files
-    var coverPath: String? = null,
-    var pdfPath: String? = null,
-    var projectPhotos: List<NamedFile> = emptyList(),
-    var models3d: List<NamedFile> = emptyList(),
-    var video: NamedFile? = null,
-
-    var content: DocumentContent,
+    var profiles: DocumentProfiles = DocumentProfiles()
 ) {
     enum class Visibility {
         PUBLIC,
@@ -45,38 +39,64 @@ data class Document(
     }
 }
 
-data class DocumentContent(
-    var category: String,
-    var student: String,
-    var professor: String,
-    var invNumber: String,
+// Grouped file paths
+data class DocumentFiles(
+    var coverPath: String? = null,
+    var pdfPath: String? = null,
+    var models3d: List<NamedFile> = emptyList(),
+
+    var projectPhotos: List<NamedFile> = emptyList(),
+    var video: NamedFile? = null
+)
+
+// Grouped transient profiles
+data class DocumentProfiles(
+    var creatorProfile: UserDto? = null,
+    var coCreatorProfiles: List<UserDto> = emptyList(),
+    var mentorProfiles: List<UserDto> = emptyList()
+)
+
+data class RestorationData(
+    var category: Category = Category.UNSPECIFIED,
+    var inventoryNumber: String,
     var name: String,
     var author: String,
+    var date: String,
     var material: String,
     var technique: String,
-    var keywords: String,
     var location: String,
     var storage: String,
-    var typeOfAnalysis: String,
-    var goalOfAnalysis: String,
-    var works: String,
-    var materialsUsed: String,
+    var typeOfAnalysis: List<Analysis> = emptyList(),
+    var works: List<Work> = emptyList(),
     var pigment: String,
     var binder: String,
     var finishingLayer: String,
-    var date: String
+    var keywords: String
+)
+
+// Complex nested types
+data class Analysis(
+    var type: AnalysisType,
+    var times: Int,
+    var goal: String
+)
+
+data class Work(
+    var name: String,
+    var material: String
 )
 
 data class DocumentSaveRequest(
-    val content: DocumentContent,
+    val content: RestorationData,
     val isPublished: Boolean
 )
 
 data class DocumentMetadataUpdateRequest(
-    val content: DocumentContent,
+    val content: RestorationData,
     val isPublished: Boolean,
     val visibility: Document.Visibility,
-    val coAuthorEmails: List<String> = emptyList()
+    val coCreatorEmails: List<String> = emptyList(), // Renamed
+    val mentorEmails: List<String> = emptyList()     // Added
 )
 
 data class SyncFilesRequest(

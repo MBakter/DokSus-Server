@@ -22,7 +22,8 @@ class AuthController(
     @PostMapping("/register")
     fun register(@RequestBody request: RegisterRequest): ResponseEntity<Any> {
         if (userRepository.existsByEmail(request.email)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Email is already registered")
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(mapOf("error" to "Email is already registered"))
         }
 
         val user = User(
@@ -33,7 +34,7 @@ class AuthController(
         )
 
         userRepository.save(user)
-        return ResponseEntity.ok("User registered successfully")
+        return ResponseEntity.ok(mapOf("message" to "User registered successfully"))
     }
 
     @PostMapping("/login")
