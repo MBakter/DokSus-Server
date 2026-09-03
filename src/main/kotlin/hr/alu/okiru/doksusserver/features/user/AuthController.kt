@@ -28,7 +28,7 @@ class AuthController(
         try {
             if (!whitelistService.isWhitelisted(request.email)) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(mapOf("errorCode" to ErrorCode.NOT_WHITELISTED))
+                    .body(ApiError(ErrorCode.NOT_WHITELISTED))
             }
 
             if (userRepository.existsByEmail(request.email)) {
@@ -45,7 +45,7 @@ class AuthController(
             )
 
             userRepository.save(user)
-            return ResponseEntity.ok(mapOf("errorCode" to ErrorCode.SUCCESS))
+            return ResponseEntity.ok(ApiError(ErrorCode.SUCCESS))
 
         } catch (e: Exception) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

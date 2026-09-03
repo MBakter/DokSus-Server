@@ -5,6 +5,7 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
 import tools.jackson.core.type.TypeReference
 import tools.jackson.databind.ObjectMapper
+import java.io.File
 
 data class WhitelistEntry(
     val email: String,
@@ -18,18 +19,22 @@ data class WhitelistEntry(
  */
 @Service
 class WhitelistService(private val objectMapper: ObjectMapper) {
-    private val whitelist = mutableMapOf<String, Boolean>()
+    private val file = File("server-files/account-whitelist.json")
 
-    @PostConstruct
-    fun loadWhitelist() {
-        val resource = ClassPathResource("server-files/account-whitelist.json")
-        if (resource.exists()) {
-            val typeRef = object : TypeReference<List<WhitelistEntry>>() {}
-            val entries: List<WhitelistEntry> = objectMapper.readValue(resource.inputStream, typeRef)
-            entries.forEach { whitelist[it.email] = it.isProfessor }
+    // This method reads the file fresh from the disk every time it is called
+    private fun getWhitelistMap(): Map<String, Boolean> {
+        if (!file.exists()) {
+            println("WARNING: Whitelist file not found at ${file.absolutePath}")
+            return emptyMap()
         }
+
+        val typeRef = object : TypeReference<List<WhitelistEntry>>() {}
+        val entries: List<WhitelistEntry> = objectMapper.readValue(file, typeRef)
+
+        // Converts the list into a Map<Email, isProfessor> for instant lookups
+        return entries.associate { it.email to it.isProfessor }
     }
 
-    fun isWhitelisted(email: String): Boolean = whitelist.containsKey(email)
-    fun isProfessor(email: String): Boolean = whitelist[email] ?: false
+    fun isWhitelisted(email: String): Boolean = getWhitelistMap().containsKey(email)
+    fun isProfessor(email: String): Boolean = getWhitelistMap()[email] ?: false
 }
