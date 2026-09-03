@@ -1,16 +1,18 @@
 package hr.alu.okiru.doksusserver.features.document
 
+import hr.alu.okiru.doksusserver.features.reference_data.group.GroupService
 import hr.alu.okiru.doksusserver.features.user.UserDto
 import hr.alu.okiru.doksusserver.features.user.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
-import org.springframework.data.web.PagedModel
 import org.springframework.stereotype.Service
+import kotlin.time.Clock
 
 @Service
 class DocumentService(
     private val documentRepository: DocumentRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val groupService: GroupService
 ) {
 
     fun getDocumentById(id: String): Document? {
@@ -30,14 +32,92 @@ class DocumentService(
     }
 
     fun getMyDocuments(email: String): List<Document> {
-        val documents = documentRepository.findByCreatorEmail(email) // Updated repository method
+        val documents = documentRepository.findByCreatorEmail(email)
         return enrich(documents)
     }
 
     fun getUserPublishedDocuments(email: String, allowedVisibilities: List<Document.Visibility>): List<Document> {
-        val documents = documentRepository.findByCreatorEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities) // Updated repository method
+        val documents = documentRepository.findByCreatorEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
         return enrich(documents)
     }
+
+
+    fun createDocument(document: Document): Document {
+        val saved = documentRepository.save(document)
+
+        // If created as published immediately, register the group
+        if (saved.isPublished) {
+            groupService.addGroupIfNotExists(saved.restorationData.group)
+        }
+        return enrich(listOf(saved)).first()
+    }
+
+    fun updateMetadata(id: String, request: DocumentMetadataUpdateRequest, principalEmail: String): Document {
+        val existingDocument = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
+
+        if (existingDocument.creatorEmail != principalEmail) {
+            throw RuntimeException("Access denied")
+        }
+
+        val wasPublished = existingDocument.isPublished
+        val isNowPublished = request.isPublished
+        val oldGroup = existingDocument.restorationData.group
+        val newGroup = request.content.group
+
+        // Apply updates
+        existingDocument.restorationData = request.content
+        existingDocument.isPublished = request.isPublished
+        existingDocument.visibility = request.visibility
+        existingDocument.coCreatorEmails = request.coCreatorEmails
+        existingDocument.mentorEmails = request.mentorEmails
+
+        if (request.isPublished && existingDocument.publicationDate == null) {
+            existingDocument.publicationDate = Clock.System.now()
+        } else if (!request.isPublished) {
+            existingDocument.publicationDate = null
+        }
+
+        val saved = documentRepository.save(existingDocument)
+
+        // --- GROUP LIFECYCLE SYNC ---
+
+        // 1. If it is published now, ensure the new group exists
+        if (isNowPublished) {
+            groupService.addGroupIfNotExists(newGroup)
+        }
+
+        // 2. If it WAS published, check if we need to clean up the old group
+        if (wasPublished) {
+            // Clean up if it was unpublished, OR if the group name was changed
+            if (!isNowPublished || oldGroup != newGroup) {
+                groupService.removeGroupIfOrphaned(oldGroup)
+            }
+        }
+
+        return enrich(listOf(saved)).first()
+    }
+
+    fun deleteDocument(id: String, principalEmail: String) {
+        val document = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
+
+        if (document.creatorEmail != principalEmail) {
+            throw RuntimeException("Access denied")
+        }
+
+        val groupToCleanUp = document.restorationData.group
+        val wasPublished = document.isPublished
+
+        // Delete the document first so existsBy... evaluates correctly
+        documentRepository.delete(document)
+
+        // If it was published, check if its group is now completely orphaned
+        if (wasPublished) {
+            groupService.removeGroupIfOrphaned(groupToCleanUp)
+        }
+    }
+
+
+// HELPERS
 
     /**
      * Centralized pipeline for data aggregation.

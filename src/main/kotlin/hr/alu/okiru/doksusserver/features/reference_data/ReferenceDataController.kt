@@ -4,6 +4,10 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
+/**
+ * Endpoints for basic reference data like enums or any other constant values which is needed by frontend
+ *
+ */
 @RestController
 @RequestMapping("/api/reference-data")
 class ReferenceDataController {

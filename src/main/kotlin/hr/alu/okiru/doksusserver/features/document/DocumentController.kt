@@ -57,8 +57,7 @@ class DocumentController(
 
     @GetMapping("/me")
     fun getMyDocuments(principal: Principal): ResponseEntity<List<Document>> {
-        val userDocuments = documentService.getMyDocuments(principal.name)
-        return ResponseEntity.ok(userDocuments)
+        return ResponseEntity.ok(documentService.getMyDocuments(principal.name))
     }
 
     @GetMapping("/user")
@@ -71,9 +70,7 @@ class DocumentController(
         } else {
             listOf(Document.Visibility.PUBLIC)
         }
-
-        val docs = documentService.getUserPublishedDocuments(email, allowedVisibilities)
-        return ResponseEntity.ok(docs)
+        return ResponseEntity.ok(documentService.getUserPublishedDocuments(email, allowedVisibilities))
     }
 
     @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -124,11 +121,8 @@ class DocumentController(
             )
         )
 
-        val savedDocument = documentRepository.save(newDocument)
-
-        return savedDocument.id?.let { id ->
-            ResponseEntity.ok(documentService.getDocumentById(id))
-        } ?: ResponseEntity.ok(savedDocument)
+        val savedDocument = documentService.createDocument(newDocument)
+        return ResponseEntity.ok(savedDocument)
     }
 
     @PutMapping("/{id}", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -137,23 +131,22 @@ class DocumentController(
         @RequestBody request: DocumentMetadataUpdateRequest,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfCreator(id, principal)
-
-        document.restorationData = request.content
-        document.isPublished = request.isPublished
-        document.visibility = request.visibility
-        document.coCreatorEmails = request.coCreatorEmails
-        document.mentorEmails = request.mentorEmails
-
-        if (request.isPublished && document.publicationDate == null) {
-            document.publicationDate = Clock.System.now()
-        } else if (!request.isPublished) {
-            document.publicationDate = null
-        }
-
-        val saved = documentRepository.save(document)
-        return ResponseEntity.ok(documentService.getDocumentById(saved.id!!))
+        val updatedDocument = documentService.updateMetadata(id, request, principal.name)
+        return ResponseEntity.ok(updatedDocument)
     }
+
+    @DeleteMapping("/{id}")
+    fun deleteDocument(
+        @PathVariable id: String,
+        principal: Principal
+    ): ResponseEntity<Void> {
+        documentService.deleteDocument(id, principal.name)
+        return ResponseEntity.noContent().build()
+    }
+
+    // ----------------------------------------------------------------
+    // FILE UPLOAD ENDPOINTS
+    // ----------------------------------------------------------------
 
     @PostMapping("/{id}/cover", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun uploadCover(
@@ -267,7 +260,6 @@ class DocumentController(
         return ResponseEntity.ok(documentRepository.save(document))
     }
 
-    // Renamed from getDocumentIfOwner
     private fun getDocumentIfCreator(id: String, principal: Principal): Document {
         val document = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
         if (document.creatorEmail != principal.name) throw RuntimeException("Access denied")

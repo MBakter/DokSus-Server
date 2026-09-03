@@ -62,6 +62,7 @@ data class RestorationData(
     var name: String,
     var author: String,
     var date: String,
+    var group: String,
     var material: String,
     var technique: String,
     var location: String,

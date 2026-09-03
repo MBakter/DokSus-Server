@@ -20,6 +20,8 @@ interface DocumentRepository : MongoRepository<Document, String>, DocumentReposi
         creatorEmail: String,
         visibilities: List<Document.Visibility>
     ): List<Document>
+
+    fun existsByRestorationDataGroupAndIsPublishedTrue(group: String): Boolean
 }
 
 // Custom Repository for more complex queries
