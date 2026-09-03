@@ -1,0 +1,8 @@
+[
+  { "email": "testprof@test.com", "isProfessor": true },
+  { "email": "testmentor@test.com", "isProfessor": true },
+  { "email": "prvitest@test.com" },
+  { "email": "elsoteszt@test.com" },
+  { "email": "masodikteszt@test.com" },
+  { "email": "asd@asd.com" }
+]

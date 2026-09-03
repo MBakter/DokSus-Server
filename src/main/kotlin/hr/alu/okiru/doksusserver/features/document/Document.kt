@@ -74,10 +74,8 @@ data class RestorationData(
     var keywords: String
 )
 
-// Complex nested types
 data class Analysis(
     var type: AnalysisType,
-    var times: Int,
     var goal: String
 )
 

@@ -25,6 +25,7 @@ class UserController(
                 name = user.name,
                 surname = user.surname,
                 email = user.email,
+                isProfessor = user.isProfessor,
             )
         }
 
@@ -32,19 +33,23 @@ class UserController(
     }
 
     @GetMapping("/search")
-    fun searchUsers(@RequestParam query: String): ResponseEntity<List<UserDto>> {
-        // Prevent empty or overly broad searches
+    fun searchUsers(
+        @RequestParam query: String,
+        @RequestParam(required = false) isProfessor: Boolean?
+    ): ResponseEntity<List<UserDto>> {
         if (query.trim().length < 2) {
             return ResponseEntity.ok(emptyList())
         }
 
-        val users = userRepository.searchUsers(query.trim())
+        val users = userRepository.searchUsers(query.trim(), isProfessor ?: false)
+
         val userDtos = users.map { user ->
             UserDto(
                 id = user.id!!,
                 name = user.name,
                 surname = user.surname,
                 email = user.email,
+                isProfessor = user.isProfessor
             )
         }
 

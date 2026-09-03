@@ -7,12 +7,12 @@ import org.springframework.data.mongodb.core.mapping.Document
 data class User(
     @Id
     var id: String? = null,
-
     var name: String,
     var surname: String,
     var email: String,
     var passwordHash: String?,
-    var role: String = "ROLE_USER"
+    var role: String = "ROLE_USER",
+    var isProfessor: Boolean = false
 )
 
 data class RegisterRequest(
@@ -32,6 +32,7 @@ data class UserDto(
     val name: String,
     val surname: String,
     val email: String,
+    val isProfessor: Boolean
 )
 
 data class AuthResponse(

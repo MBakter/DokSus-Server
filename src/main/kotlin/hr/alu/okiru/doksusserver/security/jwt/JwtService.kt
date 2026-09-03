@@ -1,4 +1,4 @@
-package hr.alu.okiru.doksusserver.security
+package hr.alu.okiru.doksusserver.security.jwt
 
 import io.jsonwebtoken.Claims
 import io.jsonwebtoken.Jwts

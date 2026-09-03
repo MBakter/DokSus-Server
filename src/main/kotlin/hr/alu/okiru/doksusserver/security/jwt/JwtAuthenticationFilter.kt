@@ -1,5 +1,6 @@
-package hr.alu.okiru.doksusserver.security
+package hr.alu.okiru.doksusserver.security.jwt
 
+import hr.alu.okiru.doksusserver.security.CustomUserDetailsService
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse

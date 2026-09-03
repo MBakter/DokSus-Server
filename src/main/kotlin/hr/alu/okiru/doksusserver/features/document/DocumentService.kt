@@ -64,7 +64,7 @@ class DocumentService(
         val usersMap = userRepository.findByEmailIn(allEmails.toList())
             .associateBy { it.email }
             .mapValues { (_, user) ->
-                UserDto(user.id!!, user.name, user.surname, user.email)
+                UserDto(user.id!!, user.name, user.surname, user.email, user.isProfessor)
             }
 
         // 3. Map the data back to the nested profiles object

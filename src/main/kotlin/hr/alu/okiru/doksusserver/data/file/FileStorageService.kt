@@ -15,29 +15,28 @@ import java.util.UUID
 class FileStorageService {
 
     private val rootLocation: Path = Paths.get("user-files")
+    private val serverLocation: Path = Paths.get("server-files")
 
     init {
         Files.createDirectories(rootLocation)
+        Files.createDirectories(serverLocation)
     }
 
     fun saveFile(file: MultipartFile, userEmail: String, subfolder: String? = null): String {
         if (file.isEmpty) throw IllegalArgumentException("Failed to store empty file.")
 
-        // Build the directory path
         var userDirectory = rootLocation.resolve(userEmail)
         if (subfolder != null) {
             userDirectory = userDirectory.resolve(subfolder)
         }
         Files.createDirectories(userDirectory)
 
-        // Generate a unique filename
         val fileExtension = file.originalFilename?.substringAfterLast(".", "")
         val uniqueFilename = "${UUID.randomUUID()}.$fileExtension"
         val destinationFile = userDirectory.resolve(uniqueFilename).normalize().toAbsolutePath()
 
         Files.copy(file.inputStream, destinationFile, StandardCopyOption.REPLACE_EXISTING)
 
-        // Return the relative path for MongoDB
         return if (subfolder != null) {
             "$userEmail/$subfolder/$uniqueFilename"
         } else {
@@ -45,14 +44,15 @@ class FileStorageService {
         }
     }
 
-    fun loadFileAsResource(relativePath: String): Resource {
+    fun loadFileAsResource(relativePath: String, isServerFile: Boolean = false): Resource {
         try {
-            // Security check to prevent directory traversal attacks
             if (relativePath.contains("..")) {
                 throw SecurityException("Cannot access files outside the storage directory.")
             }
 
-            val filePath = rootLocation.resolve(relativePath).normalize()
+            // Dynamically select the base path
+            val basePath = if (isServerFile) serverLocation else rootLocation
+            val filePath = basePath.resolve(relativePath).normalize()
             val resource = UrlResource(filePath.toUri())
 
             if (resource.exists() || resource.isReadable) {

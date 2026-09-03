@@ -1,6 +1,6 @@
 package hr.alu.okiru.doksusserver.config
 
-import hr.alu.okiru.doksusserver.security.JwtAuthenticationFilter
+import hr.alu.okiru.doksusserver.security.jwt.JwtAuthenticationFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -29,14 +29,16 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests { auth ->
                 auth
+                    .requestMatchers("/error").permitAll()
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers("/api/documents/me").authenticated() // Keep /me protected
                     .requestMatchers(HttpMethod.GET, "/api/documents/**").permitAll() // Open GET for fetching docs
                     .requestMatchers("/api/reference-data/**").permitAll()
                     .requestMatchers("/api/users/profiles").permitAll()
                     .requestMatchers("/api/users/search").authenticated()
-                    .requestMatchers(HttpMethod.GET, "/api/files").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/files", "/api/files/template/**").permitAll()
                     .anyRequest().authenticated()
+
             }
             .formLogin { it.disable() }
             .httpBasic { it.disable() }

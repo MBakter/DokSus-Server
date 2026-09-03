@@ -1,6 +1,9 @@
 package hr.alu.okiru.doksusserver.features.user
 
-import hr.alu.okiru.doksusserver.security.JwtService
+import hr.alu.okiru.doksusserver.security.WhitelistService
+import hr.alu.okiru.doksusserver.security.jwt.JwtService
+import hr.alu.okiru.doksusserver.util.ApiError
+import hr.alu.okiru.doksusserver.util.ErrorCode
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.authentication.AuthenticationManager
@@ -16,25 +19,38 @@ class AuthController(
     private val passwordEncoder: PasswordEncoder,
     private val authenticationManager: AuthenticationManager,
     private val jwtService: JwtService,
-    private val userDetailsService: UserDetailsService
+    private val userDetailsService: UserDetailsService,
+    private val whitelistService: WhitelistService
 ) {
 
     @PostMapping("/register")
     fun register(@RequestBody request: RegisterRequest): ResponseEntity<Any> {
-        if (userRepository.existsByEmail(request.email)) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(mapOf("error" to "Email is already registered"))
+        try {
+            if (!whitelistService.isWhitelisted(request.email)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(mapOf("errorCode" to ErrorCode.NOT_WHITELISTED))
+            }
+
+            if (userRepository.existsByEmail(request.email)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiError(ErrorCode.ALREADY_REGISTERED))
+            }
+
+            val user = User(
+                name = request.name,
+                surname = request.surname,
+                email = request.email,
+                passwordHash = passwordEncoder.encode(request.password),
+                isProfessor = whitelistService.isProfessor(request.email)
+            )
+
+            userRepository.save(user)
+            return ResponseEntity.ok(mapOf("errorCode" to ErrorCode.SUCCESS))
+
+        } catch (e: Exception) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiError(ErrorCode.INTERNAL_ERROR, e.message))
         }
-
-        val user = User(
-            name = request.name,
-            surname = request.surname,
-            email = request.email,
-            passwordHash = passwordEncoder.encode(request.password)
-        )
-
-        userRepository.save(user)
-        return ResponseEntity.ok(mapOf("message" to "User registered successfully"))
     }
 
     @PostMapping("/login")
@@ -52,6 +68,7 @@ class AuthController(
             name = user.name,
             surname = user.surname,
             email = user.email,
+            isProfessor = user.isProfessor
         )
 
         return ResponseEntity.ok(AuthResponse(jwtToken, userDto))

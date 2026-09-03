@@ -11,10 +11,13 @@ interface UserRepository : MongoRepository<User, String> {
     fun findByEmailIn(emails: List<String>): List<User>
 
     // Case-insensitive regex search across name, surname, or email
-    @Query("{ '\$or': [ " +
+    @Query("{ '\$and': [ " +
+            "{ '\$or': [ " +
             "{ 'name': { '\$regex': ?0, '\$options': 'i' } }, " +
             "{ 'surname': { '\$regex': ?0, '\$options': 'i' } }, " +
             "{ 'email': { '\$regex': ?0, '\$options': 'i' } } " +
+            "] }, " +
+            "{ 'isProfessor': ?1 } " +
             "] }")
-    fun searchUsers(keyword: String): List<User>
+    fun searchUsers(keyword: String, isProfessor: Boolean = false): List<User>
 }
