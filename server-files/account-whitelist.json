@@ -1,10 +1,13 @@
 [
-  { "email": "testprof@test.com", "isProfessor": true },
-  { "email": "testmentor@test.com", "isProfessor": true },
-  { "email": "prvitest@test.com" },
-  { "email": "elsoteszt@test.com" },
-  { "email": "ankabananka@test.com" },
-  { "email": "bakterillus@test.com" },
-  { "email": "masodikteszt@test.com" },
-  { "email": "asd@asd.com" }
+  { "email": "ivan.profesor@test.com", "isProfessor": true },
+  { "email": "marija.mentor@test.com", "isProfessor": true },
+  { "email": "josip.glavni@test.com", "isProfessor": true },
+  { "email": "vladan.desnica@test.com", "isProfessor": true },
+  { "email": "luka.kovac@test.com", "isProfessor": false },
+  { "email": "ana.babic@test.com", "isProfessor": false },
+  { "email": "ana.vincek@test.com", "isProfessor": false },
+  { "email": "petar.horvat@test.com", "isProfessor": false },
+  { "email": "jelena.jukic@test.com", "isProfessor": false },
+  { "email": "filip.novak@test.com", "isProfessor": false },
+  { "email": "nina.vidic@test.com", "isProfessor": false }
 ]
