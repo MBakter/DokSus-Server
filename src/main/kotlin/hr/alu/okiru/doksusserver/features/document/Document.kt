@@ -43,8 +43,8 @@ data class Document(
 data class DocumentFiles(
     var coverPath: String? = null,
     var pdfPath: String? = null,
+    var additionalPdfs: List<NamedFile> = emptyList(),
     var models3d: List<NamedFile> = emptyList(),
-
     var projectPhotos: List<NamedFile> = emptyList(),
     var video: NamedFile? = null
 )
@@ -89,6 +89,8 @@ data class DocumentSaveRequest(
     val content: RestorationData,
     val isPublished: Boolean
 )
+
+data class CreatorUpdateRequest(val email: String)
 
 data class DocumentMetadataUpdateRequest(
     val content: RestorationData,

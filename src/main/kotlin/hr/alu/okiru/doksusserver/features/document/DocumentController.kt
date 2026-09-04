@@ -1,8 +1,10 @@
 package hr.alu.okiru.doksusserver.features.document
 
 import hr.alu.okiru.doksusserver.data.file.FileStorageService
+import hr.alu.okiru.doksusserver.features.user.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
@@ -16,6 +18,7 @@ import kotlin.time.Clock
 class DocumentController(
     private val documentService: DocumentService,
     private val documentRepository: DocumentRepository,
+    private val userRepository: UserRepository,
     private val fileStorageService: FileStorageService,
 ) {
 
@@ -73,52 +76,21 @@ class DocumentController(
         return ResponseEntity.ok(documentService.getUserPublishedDocuments(email, allowedVisibilities))
     }
 
-    @PostMapping(consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    @PostMapping(consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun createDocument(
-        @RequestPart("document") restorationData: RestorationData,
-        @RequestParam("isPublished") isPublished: Boolean,
-        @RequestParam("visibility", defaultValue = "OKIRU") visibility: Document.Visibility,
-        @RequestParam("coCreatorEmails", required = false) coCreatorEmails: List<String>?,
-        @RequestParam("mentorEmails", required = false) mentorEmails: List<String>?,
-        @RequestPart("cover", required = false) cover: MultipartFile?,
-        @RequestPart("pdf", required = false) pdf: MultipartFile?,
-        @RequestPart("video", required = false) videoFile: MultipartFile?,
-        @RequestParam("videoName", required = false) videoName: String?,
-        @RequestPart("projectPhotos", required = false) projectPhotos: List<MultipartFile>?,
-        @RequestParam("projectPhotoNames", required = false) projectPhotoNames: List<String>?,
-        @RequestPart("models3d", required = false) models3d: List<MultipartFile>?,
-        @RequestParam("models3dNames", required = false) models3dNames: List<String>?,
+        @RequestBody request: DocumentMetadataUpdateRequest,
         authentication: Authentication
     ): ResponseEntity<Document> {
         val creatorEmail = authentication.name
 
-        val coverPath = cover?.let { fileStorageService.saveFile(it, creatorEmail) }
-        val pdfPath = pdf?.let { fileStorageService.saveFile(it, creatorEmail) }
-        val processedVideo = videoFile?.let {
-            NamedFile(
-                name = videoName ?: it.originalFilename ?: "Video",
-                path = fileStorageService.saveFile(it, creatorEmail)
-            )
-        }
-
-        val processedPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, creatorEmail, "project-photos")
-        val processedModels = processMultipleFiles(models3d, models3dNames, creatorEmail, "3d-models")
-
         val newDocument = Document(
-            restorationData = restorationData,
-            isPublished = isPublished,
-            visibility = visibility,
+            restorationData = request.content,
+            isPublished = request.isPublished,
+            visibility = request.visibility,
             creatorEmail = creatorEmail,
-            coCreatorEmails = coCreatorEmails ?: emptyList(),
-            mentorEmails = mentorEmails ?: emptyList(),
-            publicationDate = if (isPublished) Clock.System.now() else null,
-            files = DocumentFiles(
-                coverPath = coverPath,
-                pdfPath = pdfPath,
-                video = processedVideo,
-                projectPhotos = processedPhotos,
-                models3d = processedModels
-            )
+            coCreatorEmails = request.coCreatorEmails,
+            mentorEmails = request.mentorEmails,
+            publicationDate = if (request.isPublished) Clock.System.now() else null
         )
 
         val savedDocument = documentService.createDocument(newDocument)
@@ -142,6 +114,64 @@ class DocumentController(
     ): ResponseEntity<Void> {
         documentService.deleteDocument(id, principal.name)
         return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * Update the creator of a document. Only for professors
+     */
+    @PutMapping("/{id}/creator", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun updateDocumentCreator(
+        @PathVariable id: String,
+        @RequestBody request: CreatorUpdateRequest,
+        authentication: Authentication
+    ): ResponseEntity<Any> {
+        try {
+            val currentUserEmail = authentication.name
+            val currentUser = userRepository.findByEmail(currentUserEmail)
+                ?: return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
+
+            if (!currentUser.isProfessor) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body("Samo profesori mogu mijenjati vlasnika dokumenta.")
+            }
+
+            val document = documentRepository.findById(id).orElse(null)
+                ?: return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("Dokument nije pronađen.")
+
+            val newCreatorEmail = request.email.trim()
+            if (!userRepository.existsByEmail(newCreatorEmail)) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Korisnik s tom e-mail adresom ne postoji.")
+            }
+
+            // Prevent redundant saves if they enter the exact same email
+            if (document.creatorEmail == newCreatorEmail) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Ovaj korisnik je već vlasnik dokumenta.")
+            }
+
+            val oldCreatorEmail = document.creatorEmail
+
+            // 1. Assign the new creator
+            document.creatorEmail = newCreatorEmail
+
+            // 2. Rebuild the co-creator list
+            // Add the old creator, remove the new creator (in case they were a co-creator), and remove duplicates
+            val updatedCoCreators = (document.coCreatorEmails + oldCreatorEmail)
+                .filter { it != newCreatorEmail }
+                .distinct()
+
+            document.coCreatorEmails = updatedCoCreators
+
+            documentRepository.save(document)
+
+            return ResponseEntity.ok().build()
+
+        } catch (e: Exception) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(e.message ?: "Dogodila se interna greška.")
+        }
     }
 
     // ----------------------------------------------------------------
@@ -184,6 +214,30 @@ class DocumentController(
         document.files.pdfPath = null
         documentRepository.save(document)
         return ResponseEntity.noContent().build()
+    }
+
+    @PostMapping("/{id}/additional-pdfs", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun addAdditionalPdfs(
+        @PathVariable id: String,
+        @RequestPart("pdfs") pdfs: List<MultipartFile>,
+        @RequestParam("pdfNames") pdfNames: List<String>,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfCreator(id, principal)
+        val newPdfs = processMultipleFiles(pdfs, pdfNames, principal.name, "additional-pdfs")
+        document.files.additionalPdfs += newPdfs
+        return ResponseEntity.ok(documentRepository.save(document))
+    }
+
+    @PutMapping("/{id}/additional-pdfs", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun syncAdditionalPdfs(
+        @PathVariable id: String,
+        @RequestBody request: SyncFilesRequest,
+        principal: Principal
+    ): ResponseEntity<Document> {
+        val document = getDocumentIfCreator(id, principal)
+        document.files.additionalPdfs = request.existingFiles
+        return ResponseEntity.ok(documentRepository.save(document))
     }
 
     @PostMapping("/{id}/video", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])

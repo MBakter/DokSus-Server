@@ -37,10 +37,15 @@ class DocumentService(
     }
 
     fun getUserPublishedDocuments(email: String, allowedVisibilities: List<Document.Visibility>): List<Document> {
-        val documents = documentRepository.findByCreatorEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
-        return enrich(documents)
-    }
+        val createdDocs = documentRepository.findByCreatorEmailAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
+        val coCreatedDocs = documentRepository.findByCoCreatorEmailsContainingAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
+        val mentoredDocs = documentRepository.findByMentorEmailsContainingAndIsPublishedTrueAndVisibilityIn(email, allowedVisibilities)
 
+        // Combine all three lists and ensure no duplicates by ID
+        val allDocuments = (createdDocs + coCreatedDocs + mentoredDocs).distinctBy { it.id }
+
+        return enrich(allDocuments)
+    }
 
     fun createDocument(document: Document): Document {
         val saved = documentRepository.save(document)

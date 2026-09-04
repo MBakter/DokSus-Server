@@ -21,6 +21,16 @@ interface DocumentRepository : MongoRepository<Document, String>, DocumentReposi
         visibilities: List<Document.Visibility>
     ): List<Document>
 
+    fun findByCoCreatorEmailsContainingAndIsPublishedTrueAndVisibilityIn(
+        email: String,
+        visibilities: List<Document.Visibility>
+    ): List<Document>
+
+    fun findByMentorEmailsContainingAndIsPublishedTrueAndVisibilityIn(
+        email: String,
+        visibilities: List<Document.Visibility>
+    ): List<Document>
+
     fun existsByRestorationDataGroupAndIsPublishedTrue(group: String): Boolean
 }
 
