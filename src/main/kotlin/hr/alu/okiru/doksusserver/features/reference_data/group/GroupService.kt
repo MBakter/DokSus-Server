@@ -10,7 +10,7 @@ class GroupService(
 ) {
 
     fun addGroupIfNotExists(groupName: String?) {
-        if (groupName.isNullOrBlank()) return
+        if (groupName.isNullOrBlank() || groupName.length > 80) return
 
         val name = groupName.trim()
         if (!groupRepository.existsByName(name)) {

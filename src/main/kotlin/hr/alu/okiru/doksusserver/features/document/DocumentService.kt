@@ -23,10 +23,11 @@ class DocumentService(
     fun getDocuments(
         category: String?,
         search: String?,
+        group: String?,
         allowedVisibilities: List<Document.Visibility>,
         pageable: Pageable
     ): Page<Document> {
-        val page = documentRepository.searchDocuments(category, search, allowedVisibilities, pageable)
+        val page = documentRepository.searchDocuments(category, search, group, allowedVisibilities, pageable)
         enrich(page.content)
         return page
     }

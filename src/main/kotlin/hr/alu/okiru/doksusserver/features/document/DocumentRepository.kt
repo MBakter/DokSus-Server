@@ -37,8 +37,9 @@ interface DocumentRepository : MongoRepository<Document, String>, DocumentReposi
 // Custom Repository for more complex queries
 interface DocumentRepositoryCustom {
     fun searchDocuments(
-        category: String?, // Updated to String for Category enum name
+        category: String?,
         keyword: String?,
+        group: String?,
         visibilities: List<Document.Visibility>,
         pageable: Pageable
     ): Page<Document>
@@ -51,6 +52,7 @@ class DocumentRepositoryCustomImpl(
     override fun searchDocuments(
         category: String?,
         keyword: String?,
+        group: String?,
         visibilities: List<Document.Visibility>,
         pageable: Pageable
     ): Page<Document> {
@@ -60,9 +62,14 @@ class DocumentRepositoryCustomImpl(
         query.addCriteria(Criteria.where("isPublished").`is`(true))
         query.addCriteria(Criteria.where("visibility").`in`(visibilities))
 
-        // Category filter using the new String enum representation (e.g., "SLIKE_NA_PLATNU")
+        // Category filter using the new String enum representation
         if (!category.isNullOrBlank() && category != "UNSPECIFIED") {
             query.addCriteria(Criteria.where("restorationData.category").`is`(category.uppercase()))
+        }
+
+        // Group filter (Exact match)
+        if (!group.isNullOrBlank()) {
+            query.addCriteria(Criteria.where("restorationData.group").`is`(group))
         }
 
         if (!keyword.isNullOrBlank()) {

@@ -25,9 +25,10 @@ class DocumentController(
     @GetMapping
     fun getDocuments(
         @RequestParam(defaultValue = "0") page: Int,
-        @RequestParam(defaultValue = "30") size: Int,
+        @RequestParam(defaultValue = "12") size: Int,
         @RequestParam(required = false) search: String?,
         @RequestParam(required = false) category: String?,
+        @RequestParam(required = false) group: String?, // NEW: General metadata filtering
         principal: Principal?
     ): Page<Document> {
         val allowedVisibilities = if (principal != null) {
@@ -36,7 +37,9 @@ class DocumentController(
             listOf(Document.Visibility.PUBLIC)
         }
 
-        return documentService.getDocuments(category?.uppercase(), search, allowedVisibilities, PageRequest.of(page, size))
+        // You will need to update your DocumentService and custom repository method
+        // to accept and filter by this `group` parameter.
+        return documentService.getDocuments(category?.uppercase(), search, group, allowedVisibilities, PageRequest.of(page, size))
     }
 
     @GetMapping("/{id}")
