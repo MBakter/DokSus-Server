@@ -7,6 +7,7 @@ import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.core.userdetails.UsernameNotFoundException
 import org.springframework.stereotype.Service
 
+/** Tells Spring Security how to load a user (by email) from MongoDB during login and token checks. */
 @Service
 class CustomUserDetailsService(
     private val userRepository: UserRepository

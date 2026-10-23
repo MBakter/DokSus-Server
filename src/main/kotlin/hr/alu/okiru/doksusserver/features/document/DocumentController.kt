@@ -13,6 +13,11 @@ import org.springframework.web.multipart.MultipartFile
 import java.security.Principal
 import kotlin.time.Clock
 
+/**
+ * REST endpoints under `/api/documents`: listing and searching documents, reading one document,
+ * creating/updating/deleting, changing the owner, and uploading or syncing attached files.
+ * Visibility rules (public vs. OKIRU-only vs. draft) are enforced here based on the logged-in user.
+ */
 @RestController
 @RequestMapping("/api/documents")
 class DocumentController(

@@ -8,6 +8,10 @@ import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import kotlin.time.Clock
 
+/**
+ * Business logic for documents: ownership checks, publication dates, keeping the group list
+ * in sync with published documents, and attaching user profiles before data is returned.
+ */
 @Service
 class DocumentService(
     private val documentRepository: DocumentRepository,

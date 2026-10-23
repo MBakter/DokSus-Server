@@ -9,8 +9,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
-import java.util.UUID
+import java.util.*
 
+/**
+ * Saves and loads files on the server's disk. Uploads go to `user-files/<email>/` under a random
+ * UUID name; only the relative path is stored in the database. Templates are read from `server-files/`.
+ * Both folders are relative to the directory the server is started from.
+ */
 @Service
 class FileStorageService {
 

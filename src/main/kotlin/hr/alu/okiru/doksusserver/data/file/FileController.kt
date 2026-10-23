@@ -6,14 +6,14 @@ import org.springframework.http.ContentDisposition
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
+/**
+ * Serves stored files to the browser: uploaded user files (images, PDFs, 3D models, videos)
+ * and the downloadable Word templates for each category.
+ */
 @RestController
 @RequestMapping("/api/files")
 class FileController(

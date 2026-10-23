@@ -18,5 +18,5 @@ This is the backend REST API for the DokSus restoration documentation system. It
 
 ## Running the Project
   1. Open the project folder in IntelliJ IDEA.
-  2. Allow Maven to download dependencies automatically.
-  3. Run the Application.java main class directly from the IDE, or execute the following command in the integrated terminal:`./mvnw spring-boot:run`
+  2. Allow Gradle to download dependencies automatically.
+  3. Run the `DokSusServerApplication.kt` main class directly from the IDE, or execute the following command in the integrated terminal: `./gradlew bootRun` (on Windows: `.\gradlew.bat bootRun`)

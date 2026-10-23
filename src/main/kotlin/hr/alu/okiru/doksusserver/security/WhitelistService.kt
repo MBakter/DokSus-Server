@@ -1,7 +1,5 @@
 package hr.alu.okiru.doksusserver.security
 
-import jakarta.annotation.PostConstruct
-import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Service
 import tools.jackson.core.type.TypeReference
 import tools.jackson.databind.ObjectMapper
@@ -13,7 +11,8 @@ data class WhitelistEntry(
 )
 
 /**
- * Whitelist specifies which emails can be registered
+ * Whitelist specifies which emails can be registered, read from `server-files/account-whitelist.json`
+ * on every check, so edits take effect without a restart. It also decides who registers as a professor.
  *
  * Note: If a user is registered, removing the email from the whitelist won't restrict them from logging in
  */
@@ -32,9 +31,9 @@ class WhitelistService(private val objectMapper: ObjectMapper) {
         val entries: List<WhitelistEntry> = objectMapper.readValue(file, typeRef)
 
         // Converts the list into a Map<Email, isProfessor> for instant lookups
-        return entries.associate { it.email to it.isProfessor }
+        return entries.associate { it.email.uppercase() to it.isProfessor }
     }
 
-    fun isWhitelisted(email: String): Boolean = getWhitelistMap().containsKey(email)
+    fun isWhitelisted(email: String): Boolean = getWhitelistMap().containsKey(email.uppercase())
     fun isProfessor(email: String): Boolean = getWhitelistMap()[email] ?: false
 }

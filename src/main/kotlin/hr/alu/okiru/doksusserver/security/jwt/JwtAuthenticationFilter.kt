@@ -10,6 +10,10 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 
+/**
+ * Runs before every request. If the request carries a valid `Authorization: Bearer <token>` header,
+ * it marks the request as coming from that user; otherwise the request continues as anonymous.
+ */
 @Component
 class JwtAuthenticationFilter(
     private val jwtService: JwtService,

@@ -9,6 +9,10 @@ import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.repository.MongoRepository
 import org.springframework.stereotype.Repository
 
+/**
+ * Database access for the `documents` collection. Spring Data generates the queries
+ * automatically from the method names; complex searches live in [DocumentRepositoryCustomImpl].
+ */
 @Repository
 interface DocumentRepository : MongoRepository<Document, String>, DocumentRepositoryCustom {
 
@@ -34,7 +38,7 @@ interface DocumentRepository : MongoRepository<Document, String>, DocumentReposi
     fun existsByRestorationDataGroupAndIsPublishedTrue(group: String): Boolean
 }
 
-// Custom Repository for more complex queries
+/** Handwritten queries that cannot be expressed by Spring Data method names. */
 interface DocumentRepositoryCustom {
     fun searchDocuments(
         category: String?,
@@ -45,6 +49,10 @@ interface DocumentRepositoryCustom {
     ): Page<Document>
 }
 
+/**
+ * Implements the home page search: filters published documents by visibility, category, group
+ * and a case-insensitive keyword across several text fields, with pagination.
+ */
 class DocumentRepositoryCustomImpl(
     private val mongoTemplate: MongoTemplate
 ) : DocumentRepositoryCustom {

@@ -5,6 +5,10 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.web.servlet.config.annotation.CorsRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
+/**
+ * CORS (Cross-Origin Resource Sharing) settings. Lists which website addresses are allowed
+ * to call this API from a browser. The production web address must be added here.
+ */
 @Configuration
 class CorsConfig {
 

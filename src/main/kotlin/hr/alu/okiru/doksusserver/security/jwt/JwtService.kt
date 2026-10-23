@@ -9,6 +9,10 @@ import org.springframework.stereotype.Service
 import java.util.*
 import javax.crypto.SecretKey
 
+/**
+ * Creates and verifies JWT login tokens, signed with `jwt.secret` from `application.properties`.
+ * Tokens are valid for 24 hours. Changing the secret logs out every user.
+ */
 @Service
 class JwtService(
     @Value($$"${jwt.secret}") private val secretKeyString: String

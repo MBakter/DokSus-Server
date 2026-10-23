@@ -5,8 +5,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * Endpoints for basic reference data like enums or any other constant values which is needed by frontend
- *
+ * Endpoints for basic reference data like enums or any other constant values which is needed by frontend.
+ * The frontend loads categories and analysis types from here, so they only need to be defined once.
  */
 @RestController
 @RequestMapping("/api/reference-data")

@@ -1,5 +1,9 @@
 package hr.alu.okiru.doksusserver.features.reference_data
 
+/**
+ * Fixed list of document categories. The enum name is stored in the database, [displayName] is shown
+ * in the UI. Changing or removing an existing name requires a database migration.
+ */
 enum class Category(val displayName: String) {
     UNSPECIFIED("Unspecified"),
     DRVENI_PREDMETI("Drveni predmeti"),
@@ -11,6 +15,7 @@ enum class Category(val displayName: String) {
     DIPLOMSKI_I_SEMINARSKI_RADOVI("Diplomski i seminarski radovi")
 }
 
+/** Fixed list of scientific analysis methods selectable on a document, with English and Croatian names. */
 enum class AnalysisType(
     val abbr: String,
     val nameEn: String,

@@ -4,6 +4,7 @@ import org.springframework.data.mongodb.repository.MongoRepository
 import org.springframework.data.mongodb.repository.Query
 import org.springframework.stereotype.Repository
 
+/** Database access for the `users` collection. */
 @Repository
 interface UserRepository : MongoRepository<User, String> {
     fun findByEmail(email: String): User?

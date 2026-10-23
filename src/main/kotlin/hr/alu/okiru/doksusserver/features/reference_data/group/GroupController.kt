@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
+/** Read-only endpoints returning the existing group names, used for suggestions and filtering. */
 @RestController
 @RequestMapping("/api/reference-data/groups")
 class GroupController(

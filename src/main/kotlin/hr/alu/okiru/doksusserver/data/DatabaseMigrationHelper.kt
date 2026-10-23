@@ -10,6 +10,10 @@ import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.core.query.Update
 import org.springframework.stereotype.Service
 
+/**
+ * Runs one-off database updates on startup. Use it when the shape of stored data changes
+ * (e.g. a new required field) so that old records in MongoDB are brought up to date.
+ */
 @Service
 class DatabaseMigrationHelper(
     private val mongoTemplate: MongoTemplate

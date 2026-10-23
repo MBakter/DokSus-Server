@@ -8,11 +8,18 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import org.springframework.data.mongodb.core.mapping.Document as MongoDocument
 
+/** A file with a user-given display name and its relative storage path in `user-files`. */
 data class NamedFile(
     val name: String,
     val path: String
 )
 
+/**
+ * The main data record of the system: one restoration project / documentation entry.
+ * Stored in the MongoDB `documents` collection. Holds metadata (owner, publish state, visibility),
+ * the descriptive [RestorationData] and references to the attached [DocumentFiles].
+ * [profiles] is not saved; it is filled in by [DocumentService] before sending to the frontend.
+ */
 @MongoDocument(collection = "documents")
 data class Document(
     @Id
@@ -39,6 +46,7 @@ data class Document(
     }
 }
 
+/** Paths of every file attached to a [Document]. Paths point into the `user-files` folder. */
 data class DocumentFiles(
     var coverPath: String? = null,
     var pdfPath: String? = null,
@@ -48,12 +56,14 @@ data class DocumentFiles(
     var video: NamedFile? = null
 )
 
+/** Public user info of the creator, co-creators and mentors, attached to a [Document] when it is sent out. */
 data class DocumentProfiles(
     var creatorProfile: UserDto? = null,
     var coCreatorProfiles: List<UserDto> = emptyList(),
     var mentorProfiles: List<UserDto> = emptyList()
 )
 
+/** The descriptive content of a [Document], i.e. the fields filled in on the editor form. */
 data class RestorationData(
     var category: Category = Category.UNSPECIFIED,
     var inventoryNumber: String,
@@ -90,6 +100,7 @@ data class DocumentSaveRequest(
 
 data class CreatorUpdateRequest(val email: String)
 
+/** Request body sent by the editor when creating or updating a document (everything except files). */
 data class DocumentMetadataUpdateRequest(
     val content: RestorationData,
     val isPublished: Boolean,
@@ -98,6 +109,7 @@ data class DocumentMetadataUpdateRequest(
     val mentorEmails: List<String> = emptyList()     // Added
 )
 
+/** The list of already uploaded files the document should keep; used to remove or rename existing files. */
 data class SyncFilesRequest(
     val existingFiles: List<NamedFile>
 )

@@ -15,6 +15,11 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfigurationSource
 
+/**
+ * Central security setup. Decides which endpoints are public and which need a logged-in user,
+ * plugs in the JWT filter and defines how passwords are hashed (BCrypt).
+ * When adding a new endpoint that must be reachable without login, register it here.
+ */
 @Configuration
 @EnableWebSecurity
 class SecurityConfig(

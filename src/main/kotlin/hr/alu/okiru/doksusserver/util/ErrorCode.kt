@@ -1,5 +1,6 @@
 package hr.alu.okiru.doksusserver.util
 
+/** Machine-readable error codes returned to the frontend; mirrored in the client's `ErrorCode.ts`. */
 enum class ErrorCode {
     NOT_WHITELISTED,
     ALREADY_REGISTERED,
