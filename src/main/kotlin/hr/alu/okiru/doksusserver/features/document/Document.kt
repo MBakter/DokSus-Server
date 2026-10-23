@@ -39,7 +39,6 @@ data class Document(
     }
 }
 
-// Grouped file paths
 data class DocumentFiles(
     var coverPath: String? = null,
     var pdfPath: String? = null,
@@ -49,7 +48,6 @@ data class DocumentFiles(
     var video: NamedFile? = null
 )
 
-// Grouped transient profiles
 data class DocumentProfiles(
     var creatorProfile: UserDto? = null,
     var coCreatorProfiles: List<UserDto> = emptyList(),

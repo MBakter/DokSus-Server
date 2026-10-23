@@ -10,11 +10,9 @@ import java.util.*
 import javax.crypto.SecretKey
 
 @Service
-class JwtService {
-
-    // In a production environment, move this to application.properties
-    @Value("\${jwt.secret:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}")
-    private lateinit var secretKeyString: String
+class JwtService(
+    @Value($$"${jwt.secret}") private val secretKeyString: String
+) {
 
     private val secretKey: SecretKey by lazy {
         Keys.hmacShaKeyFor(secretKeyString.toByteArray())

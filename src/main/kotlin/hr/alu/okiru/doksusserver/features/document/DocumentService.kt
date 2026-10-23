@@ -34,6 +34,7 @@ class DocumentService(
 
     fun getMyDocuments(email: String): List<Document> {
         val documents = documentRepository.findByCreatorEmail(email)
+        documents.sortedByDescending { it.creationDate }
         return enrich(documents)
     }
 
@@ -44,6 +45,7 @@ class DocumentService(
 
         // Combine all three lists and ensure no duplicates by ID
         val allDocuments = (createdDocs + coCreatedDocs + mentoredDocs).distinctBy { it.id }
+        allDocuments.sortedByDescending { it.creationDate }
 
         return enrich(allDocuments)
     }

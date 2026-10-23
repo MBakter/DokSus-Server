@@ -94,6 +94,7 @@ class DocumentRepositoryCustomImpl(
 
         // Execute paginated query
         val documents = mongoTemplate.find(query, Document::class.java)
+        documents.sortByDescending { it.creationDate }
 
         return PageImpl(documents, pageable, count)
     }
