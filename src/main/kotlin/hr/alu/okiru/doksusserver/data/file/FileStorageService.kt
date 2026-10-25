@@ -49,6 +49,20 @@ class FileStorageService {
         }
     }
 
+    /** Deletes one uploaded file. Missing files and unsafe paths are ignored. */
+    fun deleteFile(relativePath: String?) {
+        if (relativePath.isNullOrBlank() || relativePath.contains("..")) return
+
+        try {
+            val base = rootLocation.toAbsolutePath().normalize()
+            val filePath = base.resolve(relativePath).normalize()
+            if (!filePath.startsWith(base)) return
+            Files.deleteIfExists(filePath)
+        } catch (e: Exception) {
+            println("Could not delete file $relativePath: ${e.message}")
+        }
+    }
+
     fun loadFileAsResource(relativePath: String, isServerFile: Boolean = false): Resource {
         try {
             if (relativePath.contains("..")) {

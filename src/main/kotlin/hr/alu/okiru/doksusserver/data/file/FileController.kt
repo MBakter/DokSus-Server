@@ -1,5 +1,7 @@
 package hr.alu.okiru.doksusserver.data.file
 
+import hr.alu.okiru.doksusserver.features.document.Document
+import hr.alu.okiru.doksusserver.features.document.DocumentRepository
 import hr.alu.okiru.doksusserver.features.reference_data.Category
 import org.springframework.core.io.Resource
 import org.springframework.http.ContentDisposition
@@ -9,20 +11,32 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.security.Principal
 
 /**
  * Serves stored files to the browser: uploaded user files (images, PDFs, 3D models, videos)
  * and the downloadable Word templates for each category.
+ * A user file is only served to someone who is allowed to see the document it belongs to.
  */
 @RestController
 @RequestMapping("/api/files")
 class FileController(
-    private val fileStorageService: FileStorageService
+    private val fileStorageService: FileStorageService,
+    private val documentRepository: DocumentRepository
 ) {
 
     @GetMapping
-    fun downloadFile(@RequestParam("path") path: String): ResponseEntity<Resource> {
-        // Defaults to user-files (isServerFile = false)
+    fun downloadFile(
+        @RequestParam("path") path: String,
+        principal: Principal?
+    ): ResponseEntity<Resource> {
+        val document = documentRepository.findByFilePath(path)
+            ?: return ResponseEntity.notFound().build()
+
+        if (!canRead(document, principal)) {
+            return ResponseEntity.status(403).build()
+        }
+
         val resource = fileStorageService.loadFileAsResource(path)
 
         var contentType = Files.probeContentType(resource.file.toPath())
@@ -67,6 +81,16 @@ class FileController(
         } catch (e: Exception) {
             ResponseEntity.notFound().build()
         }
+    }
+
+    private fun canRead(document: Document, principal: Principal?): Boolean {
+        if (!document.isPublished) {
+            return principal != null && document.creatorEmail == principal.name
+        }
+        if (document.visibility == Document.Visibility.OKIRU && principal == null) {
+            return false
+        }
+        return true
     }
 
     private fun getTemplatePathForCategory(category: Category): String {

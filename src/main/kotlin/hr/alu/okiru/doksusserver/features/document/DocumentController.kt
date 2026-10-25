@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.server.ResponseStatusException
 import java.security.Principal
 import kotlin.time.Clock
 
@@ -191,15 +192,20 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
+        val previous = document.files.coverPath
         document.files.coverPath = fileStorageService.saveFile(cover, principal.name)
-        return ResponseEntity.ok(documentRepository.save(document))
+        val saved = documentRepository.save(document)
+        fileStorageService.deleteFile(previous)
+        return ResponseEntity.ok(saved)
     }
 
     @DeleteMapping("/{id}/cover")
     fun deleteCover(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
         val document = getDocumentIfCreator(id, principal)
+        val previous = document.files.coverPath
         document.files.coverPath = null
         documentRepository.save(document)
+        fileStorageService.deleteFile(previous)
         return ResponseEntity.noContent().build()
     }
 
@@ -210,15 +216,20 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
+        val previous = document.files.pdfPath
         document.files.pdfPath = fileStorageService.saveFile(pdf, principal.name)
-        return ResponseEntity.ok(documentRepository.save(document))
+        val saved = documentRepository.save(document)
+        fileStorageService.deleteFile(previous)
+        return ResponseEntity.ok(saved)
     }
 
     @DeleteMapping("/{id}/pdf")
     fun deletePdf(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
         val document = getDocumentIfCreator(id, principal)
+        val previous = document.files.pdfPath
         document.files.pdfPath = null
         documentRepository.save(document)
+        fileStorageService.deleteFile(previous)
         return ResponseEntity.noContent().build()
     }
 
@@ -242,8 +253,11 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        document.files.additionalPdfs = request.existingFiles
-        return ResponseEntity.ok(documentRepository.save(document))
+        val (kept, removed) = keepExisting(document.files.additionalPdfs, request.existingFiles)
+        document.files.additionalPdfs = kept
+        val saved = documentRepository.save(document)
+        removed.forEach { fileStorageService.deleteFile(it) }
+        return ResponseEntity.ok(saved)
     }
 
     @PostMapping("/{id}/video", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -254,11 +268,14 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
+        val previous = document.files.video?.path
         document.files.video = NamedFile(
             name = videoName ?: videoFile.originalFilename ?: "Video",
             path = fileStorageService.saveFile(videoFile, principal.name)
         )
-        return ResponseEntity.ok(documentRepository.save(document))
+        val saved = documentRepository.save(document)
+        fileStorageService.deleteFile(previous)
+        return ResponseEntity.ok(saved)
     }
 
     @PutMapping("/{id}/video", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -268,8 +285,16 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        document.files.video = request.existingFile
-        return ResponseEntity.ok(documentRepository.save(document))
+        val previous = document.files.video
+        val kept = request.existingFile?.let { requested ->
+            if (previous?.path == requested.path) previous.copy(name = requested.name) else null
+        }
+        document.files.video = kept
+        documentRepository.save(document)
+        if (previous != null && previous.path != kept?.path) {
+            fileStorageService.deleteFile(previous.path)
+        }
+        return ResponseEntity.ok(document)
     }
 
     @PostMapping("/{id}/photos", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -292,8 +317,11 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        document.files.projectPhotos = request.existingFiles
-        return ResponseEntity.ok(documentRepository.save(document))
+        val (kept, removed) = keepExisting(document.files.projectPhotos, request.existingFiles)
+        document.files.projectPhotos = kept
+        val saved = documentRepository.save(document)
+        removed.forEach { fileStorageService.deleteFile(it) }
+        return ResponseEntity.ok(saved)
     }
 
     @PostMapping("/{id}/models", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
@@ -316,14 +344,39 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        document.files.models3d = request.existingFiles
-        return ResponseEntity.ok(documentRepository.save(document))
+        val (kept, removed) = keepExisting(document.files.models3d, request.existingFiles)
+        document.files.models3d = kept
+        val saved = documentRepository.save(document)
+        removed.forEach { fileStorageService.deleteFile(it) }
+        return ResponseEntity.ok(saved)
     }
 
     private fun getDocumentIfCreator(id: String, principal: Principal): Document {
-        val document = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
-        if (document.creatorEmail != principal.name) throw RuntimeException("Access denied")
+        val document = documentRepository.findById(id).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Dokument nije pronađen.")
+        }
+        if (document.creatorEmail != principal.name) {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Nemate pravo uređivati ovaj dokument.")
+        }
         return document
+    }
+
+    /**
+     * Keeps only files that already belong to the document (renames included).
+     * Paths sent by the browser that were never on this document are ignored.
+     * Returns the files to keep and the paths that should be deleted after the document is saved.
+     */
+    private fun keepExisting(
+        current: List<NamedFile>,
+        requested: List<NamedFile>
+    ): Pair<List<NamedFile>, List<String>> {
+        val currentByPath = current.associateBy { it.path }
+        val kept = requested.mapNotNull { item ->
+            currentByPath[item.path]?.copy(name = item.name)
+        }
+        val keptPaths = kept.map { it.path }.toSet()
+        val removed = current.filter { it.path !in keptPaths }.map { it.path }
+        return kept to removed
     }
 
     private fun processMultipleFiles(

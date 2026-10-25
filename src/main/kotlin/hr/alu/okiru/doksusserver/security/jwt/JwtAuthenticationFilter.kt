@@ -11,8 +11,9 @@ import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 
 /**
- * Runs before every request. If the request carries a valid `Authorization: Bearer <token>` header,
- * it marks the request as coming from that user; otherwise the request continues as anonymous.
+ * Runs before every request. A valid token in the `Authorization: Bearer` header, or in the
+ * `jwt_token` cookie (used by images and other files the browser loads directly), marks the
+ * request as coming from that user. Otherwise the request continues as anonymous.
  */
 @Component
 class JwtAuthenticationFilter(
@@ -25,17 +26,8 @@ class JwtAuthenticationFilter(
         response: HttpServletResponse,
         filterChain: FilterChain
     ) {
-        val authHeader = request.getHeader("Authorization")
-
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response)
-            return
-        }
-
-        val jwt = authHeader.substring(7)
-
-        if (jwt == "null" || jwt == "undefined" || jwt.isBlank()) {
-            println("Missing or invalid token string provided.")
+        val jwt = resolveToken(request)
+        if (jwt == null) {
             filterChain.doFilter(request, response)
             return
         }
@@ -62,5 +54,20 @@ class JwtAuthenticationFilter(
         }
 
         filterChain.doFilter(request, response)
+    }
+
+    private fun resolveToken(request: HttpServletRequest): String? {
+        val header = request.getHeader("Authorization")
+        if (header != null && header.startsWith("Bearer ")) {
+            val token = header.substring(7)
+            if (isUsable(token)) return token
+        }
+
+        val cookie = request.cookies?.firstOrNull { it.name == "jwt_token" }?.value
+        return if (isUsable(cookie)) cookie else null
+    }
+
+    private fun isUsable(token: String?): Boolean {
+        return !token.isNullOrBlank() && token != "null" && token != "undefined"
     }
 }

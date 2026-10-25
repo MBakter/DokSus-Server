@@ -3,6 +3,7 @@ package hr.alu.okiru.doksusserver.features.document
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
 import org.springframework.data.mongodb.core.MongoTemplate
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
@@ -47,6 +48,8 @@ interface DocumentRepositoryCustom {
         visibilities: List<Document.Visibility>,
         pageable: Pageable
     ): Page<Document>
+
+    fun findByFilePath(path: String): Document?
 }
 
 /**
@@ -96,14 +99,32 @@ class DocumentRepositoryCustomImpl(
             )
         }
 
+        // Newest documents first. epochSeconds covers the stored Kotlin Instant; creationDate
+        // covers a date value. Whichever form is present decides the order.
+        query.with(
+            Sort.by(Sort.Order.desc("creationDate.epochSeconds"))
+                .and(Sort.by(Sort.Order.desc("creationDate")))
+        )
+
         // Count total matching records for pagination metadata
         val countQuery = Query.of(query).limit(-1).skip(-1)
         val count = mongoTemplate.count(countQuery, Document::class.java)
 
-        // Execute paginated query
         val documents = mongoTemplate.find(query, Document::class.java)
-        documents.sortByDescending { it.creationDate }
-
         return PageImpl(documents, pageable, count)
+    }
+
+    override fun findByFilePath(path: String): Document? {
+        val query = Query(
+            Criteria().orOperator(
+                Criteria.where("files.coverPath").`is`(path),
+                Criteria.where("files.pdfPath").`is`(path),
+                Criteria.where("files.video.path").`is`(path),
+                Criteria.where("files.additionalPdfs.path").`is`(path),
+                Criteria.where("files.projectPhotos.path").`is`(path),
+                Criteria.where("files.models3d.path").`is`(path)
+            )
+        )
+        return mongoTemplate.findOne(query, Document::class.java)
     }
 }

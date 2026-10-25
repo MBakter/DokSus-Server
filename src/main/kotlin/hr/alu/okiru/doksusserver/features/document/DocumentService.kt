@@ -1,11 +1,15 @@
 package hr.alu.okiru.doksusserver.features.document
 
+import hr.alu.okiru.doksusserver.data.file.FileStorageService
+import hr.alu.okiru.doksusserver.features.reference_data.Category
 import hr.alu.okiru.doksusserver.features.reference_data.group.GroupService
 import hr.alu.okiru.doksusserver.features.user.UserDto
 import hr.alu.okiru.doksusserver.features.user.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.web.server.ResponseStatusException
 import kotlin.time.Clock
 
 /**
@@ -16,7 +20,8 @@ import kotlin.time.Clock
 class DocumentService(
     private val documentRepository: DocumentRepository,
     private val userRepository: UserRepository,
-    private val groupService: GroupService
+    private val groupService: GroupService,
+    private val fileStorageService: FileStorageService
 ) {
 
     fun getDocumentById(id: String): Document? {
@@ -38,8 +43,7 @@ class DocumentService(
 
     fun getMyDocuments(email: String): List<Document> {
         val documents = documentRepository.findByCreatorEmail(email)
-        documents.sortedByDescending { it.creationDate }
-        return enrich(documents)
+        return enrich(documents.sortedByDescending { it.creationDate })
     }
 
     fun getUserPublishedDocuments(email: String, allowedVisibilities: List<Document.Visibility>): List<Document> {
@@ -49,12 +53,13 @@ class DocumentService(
 
         // Combine all three lists and ensure no duplicates by ID
         val allDocuments = (createdDocs + coCreatedDocs + mentoredDocs).distinctBy { it.id }
-        allDocuments.sortedByDescending { it.creationDate }
-
-        return enrich(allDocuments)
+        return enrich(allDocuments.sortedByDescending { it.creationDate })
     }
 
     fun createDocument(document: Document): Document {
+        if (document.isPublished) {
+            requirePublishable(document)
+        }
         val saved = documentRepository.save(document)
 
         // If created as published immediately, register the group
@@ -65,10 +70,12 @@ class DocumentService(
     }
 
     fun updateMetadata(id: String, request: DocumentMetadataUpdateRequest, principalEmail: String): Document {
-        val existingDocument = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
+        val existingDocument = documentRepository.findById(id).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Dokument nije pronađen.")
+        }
 
         if (existingDocument.creatorEmail != principalEmail) {
-            throw RuntimeException("Access denied")
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Nemate pravo uređivati ovaj dokument.")
         }
 
         val wasPublished = existingDocument.isPublished
@@ -87,6 +94,10 @@ class DocumentService(
             existingDocument.publicationDate = Clock.System.now()
         } else if (!request.isPublished) {
             existingDocument.publicationDate = null
+        }
+
+        if (existingDocument.isPublished) {
+            requirePublishable(existingDocument)
         }
 
         val saved = documentRepository.save(existingDocument)
@@ -110,17 +121,21 @@ class DocumentService(
     }
 
     fun deleteDocument(id: String, principalEmail: String) {
-        val document = documentRepository.findById(id).orElseThrow { RuntimeException("Not found") }
+        val document = documentRepository.findById(id).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Dokument nije pronađen.")
+        }
 
         if (document.creatorEmail != principalEmail) {
-            throw RuntimeException("Access denied")
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Nemate pravo uređivati ovaj dokument.")
         }
 
         val groupToCleanUp = document.restorationData.group
         val wasPublished = document.isPublished
+        val filePaths = storedPaths(document.files)
 
         // Delete the document first so existsBy... evaluates correctly
         documentRepository.delete(document)
+        filePaths.forEach { fileStorageService.deleteFile(it) }
 
         // If it was published, check if its group is now completely orphaned
         if (wasPublished) {
@@ -128,6 +143,36 @@ class DocumentService(
         }
     }
 
+
+private fun storedPaths(files: DocumentFiles): List<String> = buildList {
+        files.coverPath?.let { add(it) }
+        files.pdfPath?.let { add(it) }
+        files.video?.path?.let { add(it) }
+        addAll(files.additionalPdfs.map { it.path })
+        addAll(files.projectPhotos.map { it.path })
+        addAll(files.models3d.map { it.path })
+    }
+
+    /**
+     * Same rules as the editor: a published document needs its core fields, a mentor,
+     * a cover image and the main PDF. Object-specific fields are skipped for research and thesis categories.
+     */
+    private fun requirePublishable(document: Document) {
+        val data = document.restorationData
+        val keywordCount = data.keywords.split(',').count { it.isNotBlank() }
+        val missingCore = data.category == Category.UNSPECIFIED || data.name.isBlank() || keywordCount < 3
+                || document.mentorEmails.none { it.isNotBlank() }
+        val exempt = data.category == Category.ISTRAZIVACKI_RADOVI_I_REFERENTNI_MATERIJALI
+                || data.category == Category.DIPLOMSKI_I_SEMINARSKI_RADOVI
+        val missingObjectFields = !exempt && listOf(
+            data.inventoryNumber, data.author, data.date, data.material, data.technique, data.storage
+        ).any { it.isBlank() }
+        val missingFiles = document.files.coverPath.isNullOrBlank() || document.files.pdfPath.isNullOrBlank()
+
+        if (missingCore || missingObjectFields || missingFiles) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Nedostaju obavezni podaci ili datoteke za objavu.")
+        }
+    }
 
 // HELPERS
 
