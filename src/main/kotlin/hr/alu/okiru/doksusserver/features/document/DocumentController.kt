@@ -4,6 +4,7 @@ import hr.alu.okiru.doksusserver.data.file.FileStorageService
 import hr.alu.okiru.doksusserver.features.user.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -193,8 +194,11 @@ class DocumentController(
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
         val previous = document.files.coverPath
-        document.files.coverPath = fileStorageService.saveFile(cover, principal.name)
-        val saved = documentRepository.save(document)
+        val saved = documentRepository.updateByCreator(
+            id,
+            principal.name,
+            Update().set("files.coverPath", fileStorageService.saveFile(cover, principal.name))
+        )
         fileStorageService.deleteFile(previous)
         return ResponseEntity.ok(saved)
     }
@@ -203,8 +207,7 @@ class DocumentController(
     fun deleteCover(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
         val document = getDocumentIfCreator(id, principal)
         val previous = document.files.coverPath
-        document.files.coverPath = null
-        documentRepository.save(document)
+        documentRepository.updateByCreator(id, principal.name, Update().unset("files.coverPath"))
         fileStorageService.deleteFile(previous)
         return ResponseEntity.noContent().build()
     }
@@ -217,8 +220,11 @@ class DocumentController(
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
         val previous = document.files.pdfPath
-        document.files.pdfPath = fileStorageService.saveFile(pdf, principal.name)
-        val saved = documentRepository.save(document)
+        val saved = documentRepository.updateByCreator(
+            id,
+            principal.name,
+            Update().set("files.pdfPath", fileStorageService.saveFile(pdf, principal.name))
+        )
         fileStorageService.deleteFile(previous)
         return ResponseEntity.ok(saved)
     }
@@ -227,8 +233,7 @@ class DocumentController(
     fun deletePdf(@PathVariable id: String, principal: Principal): ResponseEntity<Void> {
         val document = getDocumentIfCreator(id, principal)
         val previous = document.files.pdfPath
-        document.files.pdfPath = null
-        documentRepository.save(document)
+        documentRepository.updateByCreator(id, principal.name, Update().unset("files.pdfPath"))
         fileStorageService.deleteFile(previous)
         return ResponseEntity.noContent().build()
     }
@@ -236,14 +241,23 @@ class DocumentController(
     @PostMapping("/{id}/additional-pdfs", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun addAdditionalPdfs(
         @PathVariable id: String,
-        @RequestPart("pdfs") pdfs: List<MultipartFile>,
-        @RequestParam("pdfNames") pdfNames: List<String>,
+        @RequestPart("pdfs") pdf: MultipartFile,
+        // One string, not a list: Spring splits list parameters on commas, so a name like
+        // "Izvještaj, final" used to be stored as two names and the file was dropped.
+        @RequestParam("pdfNames") pdfName: String,
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfCreator(id, principal)
-        val newPdfs = processMultipleFiles(pdfs, pdfNames, principal.name, "additional-pdfs")
-        document.files.additionalPdfs += newPdfs
-        return ResponseEntity.ok(documentRepository.save(document))
+        getDocumentIfCreator(id, principal)
+        val stored = NamedFile(
+            name = pdfName,
+            path = fileStorageService.saveFile(pdf, principal.name, "additional-pdfs")
+        )
+        val saved = documentRepository.updateByCreator(
+            id,
+            principal.name,
+            Update().push("files.additionalPdfs", stored)
+        )
+        return ResponseEntity.ok(saved)
     }
 
     @PutMapping("/{id}/additional-pdfs", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -253,9 +267,13 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        val (kept, removed) = keepExisting(document.files.additionalPdfs, request.existingFiles)
-        document.files.additionalPdfs = kept
-        val saved = documentRepository.save(document)
+        val (saved, removed) = documentRepository.syncNamedFiles(
+            id,
+            principal.name,
+            "files.additionalPdfs",
+            document.files.additionalPdfs,
+            request.existingFiles
+        )
         removed.forEach { fileStorageService.deleteFile(it) }
         return ResponseEntity.ok(saved)
     }
@@ -269,11 +287,11 @@ class DocumentController(
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
         val previous = document.files.video?.path
-        document.files.video = NamedFile(
+        val stored = NamedFile(
             name = videoName ?: videoFile.originalFilename ?: "Video",
             path = fileStorageService.saveFile(videoFile, principal.name)
         )
-        val saved = documentRepository.save(document)
+        val saved = documentRepository.updateByCreator(id, principal.name, Update().set("files.video", stored))
         fileStorageService.deleteFile(previous)
         return ResponseEntity.ok(saved)
     }
@@ -289,25 +307,32 @@ class DocumentController(
         val kept = request.existingFile?.let { requested ->
             if (previous?.path == requested.path) previous.copy(name = requested.name) else null
         }
-        document.files.video = kept
-        documentRepository.save(document)
+        val update = if (kept == null) Update().unset("files.video") else Update().set("files.video", kept)
+        val saved = documentRepository.updateByCreator(id, principal.name, update)
         if (previous != null && previous.path != kept?.path) {
             fileStorageService.deleteFile(previous.path)
         }
-        return ResponseEntity.ok(document)
+        return ResponseEntity.ok(saved)
     }
 
     @PostMapping("/{id}/photos", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun addPhotos(
         @PathVariable id: String,
-        @RequestPart("projectPhotos") projectPhotos: List<MultipartFile>,
-        @RequestParam("projectPhotoNames") projectPhotoNames: List<String>,
+        @RequestPart("projectPhotos") projectPhoto: MultipartFile,
+        @RequestParam("projectPhotoNames") projectPhotoName: String, // scalar: a list would split the name on commas
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfCreator(id, principal)
-        val newPhotos = processMultipleFiles(projectPhotos, projectPhotoNames, principal.name, "project-photos")
-        document.files.projectPhotos += newPhotos
-        return ResponseEntity.ok(documentRepository.save(document))
+        getDocumentIfCreator(id, principal)
+        val stored = NamedFile(
+            name = projectPhotoName,
+            path = fileStorageService.saveFile(projectPhoto, principal.name, "project-photos")
+        )
+        val saved = documentRepository.updateByCreator(
+            id,
+            principal.name,
+            Update().push("files.projectPhotos", stored)
+        )
+        return ResponseEntity.ok(saved)
     }
 
     @PutMapping("/{id}/photos", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -317,9 +342,13 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        val (kept, removed) = keepExisting(document.files.projectPhotos, request.existingFiles)
-        document.files.projectPhotos = kept
-        val saved = documentRepository.save(document)
+        val (saved, removed) = documentRepository.syncNamedFiles(
+            id,
+            principal.name,
+            "files.projectPhotos",
+            document.files.projectPhotos,
+            request.existingFiles
+        )
         removed.forEach { fileStorageService.deleteFile(it) }
         return ResponseEntity.ok(saved)
     }
@@ -327,14 +356,21 @@ class DocumentController(
     @PostMapping("/{id}/models", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun addModels(
         @PathVariable id: String,
-        @RequestPart("models3d") models3d: List<MultipartFile>,
-        @RequestParam("models3dNames") models3dNames: List<String>,
+        @RequestPart("models3d") model: MultipartFile,
+        @RequestParam("models3dNames") modelName: String, // scalar: a list would split the name on commas
         principal: Principal
     ): ResponseEntity<Document> {
-        val document = getDocumentIfCreator(id, principal)
-        val newModels = processMultipleFiles(models3d, models3dNames, principal.name, "3d-models")
-        document.files.models3d += newModels
-        return ResponseEntity.ok(documentRepository.save(document))
+        getDocumentIfCreator(id, principal)
+        val stored = NamedFile(
+            name = modelName,
+            path = fileStorageService.saveFile(model, principal.name, "3d-models")
+        )
+        val saved = documentRepository.updateByCreator(
+            id,
+            principal.name,
+            Update().push("files.models3d", stored)
+        )
+        return ResponseEntity.ok(saved)
     }
 
     @PutMapping("/{id}/models", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -344,9 +380,13 @@ class DocumentController(
         principal: Principal
     ): ResponseEntity<Document> {
         val document = getDocumentIfCreator(id, principal)
-        val (kept, removed) = keepExisting(document.files.models3d, request.existingFiles)
-        document.files.models3d = kept
-        val saved = documentRepository.save(document)
+        val (saved, removed) = documentRepository.syncNamedFiles(
+            id,
+            principal.name,
+            "files.models3d",
+            document.files.models3d,
+            request.existingFiles
+        )
         removed.forEach { fileStorageService.deleteFile(it) }
         return ResponseEntity.ok(saved)
     }
@@ -361,35 +401,4 @@ class DocumentController(
         return document
     }
 
-    /**
-     * Keeps only files that already belong to the document (renames included).
-     * Paths sent by the browser that were never on this document are ignored.
-     * Returns the files to keep and the paths that should be deleted after the document is saved.
-     */
-    private fun keepExisting(
-        current: List<NamedFile>,
-        requested: List<NamedFile>
-    ): Pair<List<NamedFile>, List<String>> {
-        val currentByPath = current.associateBy { it.path }
-        val kept = requested.mapNotNull { item ->
-            currentByPath[item.path]?.copy(name = item.name)
-        }
-        val keptPaths = kept.map { it.path }.toSet()
-        val removed = current.filter { it.path !in keptPaths }.map { it.path }
-        return kept to removed
     }
-
-    private fun processMultipleFiles(
-        files: List<MultipartFile>?,
-        names: List<String>?,
-        userEmail: String,
-        subfolder: String
-    ): List<NamedFile> {
-        if (files == null || names == null || files.size != names.size) return emptyList()
-
-        return files.zip(names).map { (file, name) ->
-            val path = fileStorageService.saveFile(file, userEmail, subfolder)
-            NamedFile(name = name, path = path)
-        }
-    }
-}

@@ -7,6 +7,7 @@ import hr.alu.okiru.doksusserver.features.user.UserDto
 import hr.alu.okiru.doksusserver.features.user.UserRepository
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -83,24 +84,40 @@ class DocumentService(
         val oldGroup = existingDocument.restorationData.group
         val newGroup = request.content.group
 
-        // Apply updates
-        existingDocument.restorationData = request.content
-        existingDocument.isPublished = request.isPublished
-        existingDocument.visibility = request.visibility
-        existingDocument.coCreatorEmails = request.coCreatorEmails
-        existingDocument.mentorEmails = request.mentorEmails
-
-        if (request.isPublished && existingDocument.publicationDate == null) {
-            existingDocument.publicationDate = Clock.System.now()
-        } else if (!request.isPublished) {
-            existingDocument.publicationDate = null
+        val publicationDate = when {
+            request.isPublished && existingDocument.publicationDate == null -> Clock.System.now()
+            !request.isPublished -> null
+            else -> existingDocument.publicationDate
         }
 
-        if (existingDocument.isPublished) {
-            requirePublishable(existingDocument)
+        if (request.isPublished) {
+            requirePublishable(
+                existingDocument.copy(
+                    restorationData = request.content,
+                    isPublished = true,
+                    visibility = request.visibility,
+                    coCreatorEmails = request.coCreatorEmails,
+                    mentorEmails = request.mentorEmails,
+                    publicationDate = publicationDate
+                )
+            )
         }
 
-        val saved = documentRepository.save(existingDocument)
+        // Only the metadata fields are written. Saving the whole document would overwrite files
+        // that another request stored after this one was loaded.
+        val update = Update()
+            .set("restorationData", request.content)
+            .set("isPublished", request.isPublished)
+            .set("visibility", request.visibility)
+            .set("coCreatorEmails", request.coCreatorEmails)
+            .set("mentorEmails", request.mentorEmails)
+        if (publicationDate != null) {
+            update.set("publicationDate", publicationDate)
+        } else {
+            update.unset("publicationDate")
+        }
+
+        val saved = documentRepository.updateByCreator(id, principalEmail, update)
 
         // --- GROUP LIFECYCLE SYNC ---
 

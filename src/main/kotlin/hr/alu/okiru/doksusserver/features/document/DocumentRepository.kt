@@ -4,11 +4,16 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
+import org.springframework.data.mongodb.core.FindAndModifyOptions
 import org.springframework.data.mongodb.core.MongoTemplate
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
+import org.springframework.data.mongodb.core.query.Update
 import org.springframework.data.mongodb.repository.MongoRepository
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Repository
+import org.springframework.web.server.ResponseStatusException
+import org.bson.Document as BsonDocument
 
 /**
  * Database access for the `documents` collection. Spring Data generates the queries
@@ -50,6 +55,22 @@ interface DocumentRepositoryCustom {
     ): Page<Document>
 
     fun findByFilePath(path: String): Document?
+
+    /**
+     * Updates one document without replacing it. A full save would write back every field from
+     * the copy loaded at the start of the request, and a slower request could erase files stored
+     * by a request that finished in between.
+     */
+    fun updateByCreator(id: String, creatorEmail: String, update: Update): Document
+
+    /** Renames and removes entries in one file list. Newly pushed files are left in place. */
+    fun syncNamedFiles(
+        id: String,
+        creatorEmail: String,
+        field: String,
+        current: List<NamedFile>,
+        requested: List<NamedFile>
+    ): Pair<Document, List<String>>
 }
 
 /**
@@ -126,5 +147,48 @@ class DocumentRepositoryCustomImpl(
             )
         )
         return mongoTemplate.findOne(query, Document::class.java)
+    }
+
+    override fun updateByCreator(id: String, creatorEmail: String, update: Update): Document {
+        val query = Query(Criteria.where("_id").`is`(id).and("creatorEmail").`is`(creatorEmail))
+        val options = FindAndModifyOptions.options().returnNew(true)
+        return mongoTemplate.findAndModify(query, update, options, Document::class.java)
+            ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Dokument je u međuvremenu promijenjen.")
+    }
+
+    override fun syncNamedFiles(
+        id: String,
+        creatorEmail: String,
+        field: String,
+        current: List<NamedFile>,
+        requested: List<NamedFile>
+    ): Pair<Document, List<String>> {
+        require(field == "files.additionalPdfs" || field == "files.projectPhotos" || field == "files.models3d") {
+            "Nepoznato polje datoteka."
+        }
+
+        val currentByPath = current.associateBy { it.path }
+        val kept = requested.mapNotNull { item ->
+            currentByPath[item.path]?.let { item }
+        }
+        val keptPaths = kept.map { it.path }.toSet()
+        val removed = current.filter { it.path !in keptPaths }.map { it.path }
+
+        var updated: Document? = null
+        for (path in removed) {
+            updated = updateByCreator(id, creatorEmail, Update().pull(field, BsonDocument("path", path)))
+        }
+        for (item in kept) {
+            val previous = currentByPath[item.path] ?: continue
+            if (previous.name == item.name) continue
+            val update = Update()
+                .set("$field.\$[file].name", item.name)
+                .filterArray(Criteria.where("file.path").`is`(item.path))
+            updated = updateByCreator(id, creatorEmail, update)
+        }
+
+        val document = updated ?: mongoTemplate.findById(id, Document::class.java)
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Dokument nije pronađen.")
+        return document to removed
     }
 }
