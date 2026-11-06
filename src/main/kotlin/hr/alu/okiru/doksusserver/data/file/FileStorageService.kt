@@ -15,6 +15,10 @@ import java.util.*
  * Saves and loads files on the server's disk. Uploads go to `user-files/<email>/` under a random
  * UUID name; only the relative path is stored in the database. Templates are read from `server-files/`.
  * Both folders are relative to the directory the server is started from.
+ *
+ * The email is the folder name so files stay tied to the person even if the database id changes.
+ * Characters Windows rejects in a path (`< > : " / \ | ? *`), `%`, trailing dots and spaces, and
+ * reserved device names such as `CON` are percent-encoded. A normal address is left unchanged.
  */
 @Service
 class FileStorageService {
@@ -30,7 +34,8 @@ class FileStorageService {
     fun saveFile(file: MultipartFile, userEmail: String, subfolder: String? = null): String {
         if (file.isEmpty) throw IllegalArgumentException("Failed to store empty file.")
 
-        var userDirectory = rootLocation.resolve(userEmail)
+        val folderName = emailToFolderName(userEmail)
+        var userDirectory = rootLocation.resolve(folderName)
         if (subfolder != null) {
             userDirectory = userDirectory.resolve(subfolder)
         }
@@ -43,9 +48,9 @@ class FileStorageService {
         Files.copy(file.inputStream, destinationFile, StandardCopyOption.REPLACE_EXISTING)
 
         return if (subfolder != null) {
-            "$userEmail/$subfolder/$uniqueFilename"
+            "$folderName/$subfolder/$uniqueFilename"
         } else {
-            "$userEmail/$uniqueFilename"
+            "$folderName/$uniqueFilename"
         }
     }
 
@@ -84,3 +89,51 @@ class FileStorageService {
         }
     }
 }
+
+/** Windows-illegal path characters, plus `%` so the encoding cannot collide with a real address. */
+private val illegalFolderChars = charArrayOf('<', '>', ':', '"', '/', '\\', '|', '?', '*', '%')
+
+/** Names Windows rejects even with an extension, matched against the text before the first dot. */
+private val reservedFolderNames = setOf(
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+)
+
+/**
+ * Turns an email into one folder name. Ordinary addresses are returned as-is, so existing
+ * `user-files/<email>/` directories and stored paths keep working.
+ */
+internal fun emailToFolderName(email: String): String {
+    val encoded = buildString(email.length) {
+        for (ch in email) {
+            if (ch.code < 32 || ch.code == 127 || ch in illegalFolderChars) {
+                append(percentEncode(ch))
+            } else {
+                append(ch)
+            }
+        }
+    }
+
+    val safe = buildString(encoded.length) {
+        encoded.forEachIndexed { index, ch ->
+            val remainderIsTrailing = encoded.substring(index).all { it == '.' || it == ' ' }
+            if ((ch == '.' || ch == ' ') && remainderIsTrailing) {
+                append(percentEncode(ch))
+            } else {
+                append(ch)
+            }
+        }
+    }
+
+    if (safe.isEmpty()) throw IllegalArgumentException("Email is empty.")
+
+    val stem = safe.substringBefore('.')
+    if (stem.uppercase() in reservedFolderNames) {
+        return percentEncode(safe.first()) + safe.drop(1)
+    }
+    return safe
+}
+
+private fun percentEncode(ch: Char): String =
+    "%" + ch.code.toString(16).uppercase().padStart(2, '0')
