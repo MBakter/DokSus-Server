@@ -1,0 +1,25 @@
+ACADEMIC USE LICENSE
+
+Copyright (c) 2026 Mészáros Barna. All rights reserved.
+
+This software, including its source code, documentation, and user interfaces (collectively, the "Software"), is the exclusive intellectual property of Mészáros Barna ("Licensor"). 
+
+By accessing, cloning, downloading, or modifying this Software via GitHub or any other medium, Akademija likovnih umjetnosti and its authorized representatives (collectively, the "Licensee") agree to the following terms and conditions:
+
+1. GRANTED RIGHTS (EDUCATIONAL & INTERNAL USE)
+Licensor hereby grants the Licensee a non-exclusive, non-transferable, royalty-free, worldwide right to:
+   * View, clone, and download the Software's source code.
+   * Modify, adapt, or build derivative works of the Software.
+   * Deploy and use the Software internally for educational, research, and non-commercial administrative purposes.
+
+2. RESTRICTIONS & PROHIBITION OF COMMERCIALIZATION
+All rights not explicitly granted in Section 1 are reserved by the Licensor. 
+   * Commercial Ban: Licensee shall not sell, rent, lease, sub-license, monetize, or otherwise commercially exploit the Software, its source code, or any derivative works built from it.
+   * Distribution Ban: Licensee shall not distribute, publish, or make the source code available to any third party outside of active students, faculty, and staff directly involved in developing or evaluating the project for the Licensee.
+   * Attribution: All original copyright notices, authorship credits, and this license file must remain intact in all copies or modifications of the source code.
+
+3. CONTRIBUTIONS AND DERIVATIVE WORKS
+Any modifications, bug fixes, or new features developed by the Licensee (e.g., by professors or students) may be merged back into this repository. By contributing to this repository, the contributor grants the Licensor a perpetual, irrevocable, worldwide, royalty-free right to use, modify, and distribute those contributions as part of the core Software.
+
+4. NO WARRANTY & LIMITATION OF LIABILITY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
